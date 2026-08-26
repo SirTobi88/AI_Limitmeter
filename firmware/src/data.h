@@ -14,6 +14,8 @@ struct UsageData {
     char reset_date[12];     // formatted reset date e.g. "Jul 1" (Enterprise)
     char anim[24];           // splash animation the host wants shown ("" = host
                              // has no opinion, device picks by usage rate)
+    bool corner_anim;        // show the buddy small in the usage screen's corner
+                             // instead of the logo; false unless the host asks
     long clock_epoch;        // local wall-clock epoch (s) from daemon; 0 = not provided
     int  clock_fmt;          // 12 or 24 (hour format from daemon); defaults to 24
     bool ok;                 // data parse succeeded

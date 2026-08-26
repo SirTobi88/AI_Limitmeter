@@ -220,6 +220,12 @@ static lv_obj_t* lbl_anim;      // status line: connection state + whimsical idl
 // ---- Battery indicator (shared, on top) ----
 static lv_obj_t* battery_img;
 static lv_obj_t* logo_img;
+// Optional: der Buddy klein in der Ecke des Usage-Screens, an Stelle des
+// festen Logos. Der Host schaltet das ueber das Feld "ua" ein, sonst bleibt
+// es beim Logo wie bisher.
+static splash_mini_t* usage_mini = NULL;
+static bool usage_creature_on = false;
+static char usage_creature_anim[24] = "idle breathe";
 static lv_image_dsc_t battery_dscs[5];  // empty, low, medium, full, charging
 
 // ---- Live-data freshness → which usage sub-view to show ----
@@ -312,6 +318,7 @@ static void format_reset_time(int mins, char* buf, size_t len) {
 
 // Forward decls — callbacks defined near ui_show_screen below
 static void global_click_cb(lv_event_t* e);
+static void apply_corner_creature(void);
 
 static lv_obj_t* make_panel(lv_obj_t* parent, int x, int y, int w, int h) {
     lv_obj_t* panel = lv_obj_create(parent);
@@ -563,6 +570,16 @@ void ui_init(void) {
     lv_image_set_src(logo_img, &logo_dsc);
     lv_obj_set_pos(logo_img, L.margin, L.logo_y);
 
+    // Genau dorthin, wo das Logo sitzt, und genauso gross - es wird das eine
+    // gegen das andere getauscht, nichts verschiebt sich. NULL ist in Ordnung:
+    // dann bleibt einfach das Logo stehen.
+    usage_mini = splash_mini_new(scr, usage_creature_anim,
+                                 L.small_icons ? LOGO_SMALL_WIDTH : LOGO_WIDTH);
+    if (splash_mini_obj(usage_mini)) {
+        lv_obj_set_pos(splash_mini_obj(usage_mini), L.margin, L.logo_y);
+        lv_obj_add_flag(splash_mini_obj(usage_mini), LV_OBJ_FLAG_HIDDEN);
+    }
+
     battery_img = lv_image_create(scr);
     lv_image_set_src(battery_img, &battery_dscs[0]);
     lv_obj_set_pos(battery_img, L.scr_w - L.batt_w - L.margin, L.batt_y);
@@ -681,12 +698,15 @@ static void update_view_state(void) {
     lv_obj_add_flag(usage_group, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(v == 0 ? pair_group : v == 1 ? idle_group : usage_group,
                       LV_OBJ_FLAG_HIDDEN);
+    // Der Eckbuddy haengt am view_state, nicht nur am Screen.
+    apply_corner_creature();
 }
 
 void ui_tick_anim(void) {
     if (current_screen != SCREEN_USAGE) return;
     update_view_state();
     if (view_state == 1) splash_mini_tick();   // animate the sleeping creature on the idle screen
+    else if (view_state == 2 && usage_creature_on) splash_mini_tick_one(usage_mini);
 
     uint32_t now = lv_tick_get();
 
@@ -748,6 +768,41 @@ static void apply_battery_visibility(void) {
     else                                  lv_obj_clear_flag(battery_img, LV_OBJ_FLAG_HIDDEN);
 }
 
+// Logo oder Buddy? Der Buddy nur, wenn der Host ihn angefordert hat und der
+// Usage-Screen mit frischen Zahlen zu sehen ist - auf dem Splash zeigt ohnehin
+// die grosse Animation, und auf dem Pair-/Idle-Screen gibt es nichts zu
+// spiegeln.
+static void apply_corner_creature(void) {
+    lv_obj_t* mini = splash_mini_obj(usage_mini);
+    bool want_mini = usage_creature_on && mini &&
+                     current_screen != SCREEN_SPLASH && view_state == 2;
+    if (mini) {
+        if (want_mini) lv_obj_clear_flag(mini, LV_OBJ_FLAG_HIDDEN);
+        else           lv_obj_add_flag(mini, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (logo_img) {
+        if (current_screen == SCREEN_SPLASH || want_mini)
+            lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+void ui_set_corner_creature(bool on) {
+    if (on == usage_creature_on) return;
+    usage_creature_on = on;
+    apply_corner_creature();
+}
+
+
+void ui_set_corner_anim(const char* name) {
+    if (!name || !name[0]) return;
+    strlcpy(usage_creature_anim, name, sizeof(usage_creature_anim));
+    splash_mini_set_anim(usage_mini, usage_creature_anim);
+}
+
+
 static void global_click_cb(lv_event_t* e) {
     (void)e;
     if (current_screen == SCREEN_SPLASH) ui_show_screen(prev_non_splash_screen);
@@ -764,10 +819,7 @@ void ui_show_screen(screen_t screen) {
     default: break;
     }
 
-    if (logo_img) {
-        if (screen == SCREEN_SPLASH) lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
-        else                          lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
-    }
+    apply_corner_creature();
 
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;

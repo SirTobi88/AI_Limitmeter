@@ -126,6 +126,8 @@ static bool parse_json(const char* json, UsageData* out) {
     out->period_days = doc["pd"] | 30;
     strlcpy(out->reset_date, doc["rd"] | "", sizeof(out->reset_date));
     strlcpy(out->anim, doc["a"] | "", sizeof(out->anim));
+    // Absent (aelterer Host) → aus, also Logo wie bisher.
+    out->corner_anim = doc["ua"] | false;
     out->clock_epoch = doc["t"] | 0L;
     out->clock_fmt = doc["tf"] | 24;
     out->ok = doc["ok"] | false;
@@ -454,6 +456,10 @@ void loop() {
             // Host-driven animation. Sent only when the host is configured to
             // mirror its desktop buddy; absent → "" → device keeps deciding.
             splash_set_anim(usage.anim);
+            // Dieselbe Animation zusaetzlich klein in der Ecke des
+            // Usage-Screens, wenn der Host das moechte.
+            ui_set_corner_creature(usage.corner_anim);
+            if (usage.corner_anim) ui_set_corner_anim(usage.anim);
             if (g_after != g_before) {
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);
