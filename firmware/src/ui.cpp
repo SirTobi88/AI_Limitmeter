@@ -819,10 +819,12 @@ void ui_show_screen(screen_t screen) {
     default: break;
     }
 
-    apply_corner_creature();
-
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
+    // Erst nach current_screen: apply_corner_creature() liest die Variable,
+    // nicht das Argument. Davor entschied es noch nach dem alten Screen und
+    // versteckte auf dem Weg zum Usage-Screen beides -- die Ecke blieb leer.
+    apply_corner_creature();
     apply_battery_visibility();
 }
 
