@@ -602,6 +602,12 @@ void ui_update(const UsageData* data) {
     if (data->clock_epoch > 0) {    // daemon supplied wall-clock time → drive the title clock
         clock_base_epoch = data->clock_epoch;
         clock_base_ms = last_data_ms;
+        // Die Uhr wird nur beim Minutenwechsel neu geschrieben. Wechselt das
+        // Format, wuerde die Umstellung sonst bis zu eine Minute lang nicht zu
+        // sehen sein -- der Schalter im Programm sieht dann kaputt aus. Also
+        // den gemerkten Minutenwert verwerfen, damit der naechste Durchlauf
+        // sofort neu schreibt.
+        if (clock_fmt != data->clock_fmt) clock_last_min = -1;
         clock_fmt = data->clock_fmt;
     } else if (clock_base_epoch != 0) {   // clock turned off daemon-side → revert title to "Usage"
         clock_base_epoch = 0;
