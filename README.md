@@ -11,11 +11,12 @@
 > the macOS fork of the Session Browser. That app sends the field the display
 > modes read; no other host does.
 >
-> Added here: three display modes (usage, Clawd, or switch to Clawd for a few
-> seconds each time Claude changes state), a footer that says `Needs you`,
-> `Your turn`, `Limit reached` or `Idle` instead of cycling verbs forever, and a
-> corner buddy that no longer freezes on its first animation. Run it with any
-> other host and you get the last two.
+> Added here: the buddy shown small in the usage screen's corner, three display
+> modes (usage, Clawd, or switch to Clawd for a few seconds each time Claude
+> changes state), and a footer that says `Needs you`, `Your turn`,
+> `Limit reached` or `Idle` instead of cycling verbs forever. The corner and the
+> modes both need fields only our app sends; the footer works with juppeee's
+> host too, since it reads the animation name his app already sends.
 >
 > No licence, and not ours to grant one. Hermann explains why in his README
 > under *Licensing gray area warning*: the code itself is fine, but the repo
