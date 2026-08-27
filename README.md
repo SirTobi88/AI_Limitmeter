@@ -18,7 +18,6 @@
 > verbs forever. The corner and the modes need fields only our app sends; the
 > footer works with juppeee's host too, since it reads the animation name his
 > app already sends.
-
 >
 > No licence, and not ours to grant one. Hermann explains why in his README
 > under *Licensing gray area warning*: the code itself is fine, but the repo
