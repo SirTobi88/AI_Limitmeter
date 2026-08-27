@@ -1,55 +1,50 @@
-> ### This is a fork of a fork
->
-> Hermann Björgvin wrote the Clawdmeter. juppeee's `csb-buddy` branch taught it
-> to show what Claude Code is doing. **This fork exists to pair with the
-> [macOS port of the Session Browser](https://github.com/ryanmaule/claude-session-browser)**
-> — that host is what drives the display modes below, so on its own this
-> firmware gives you juppeee's branch plus two fixes.
->
-> What it adds:
->
-> - **Three display modes** (`sm` in the payload): the usage numbers, the big
->   Clawd, or — the interesting one — switch to the big Clawd for five seconds
->   whenever Claude changes state, then back to the numbers.
-> - **A usage-screen footer that means something.** The whimsical verbs used to
->   run on a timer whenever the link was healthy, whether Claude was compiling
->   or idle since lunch. They now stay where they belong — active work — and
->   the footer says `Needs you`, `Your turn`, `Limit reached` or `Idle`
->   otherwise, colour-coded so it reads across a room.
-> - **A corner buddy that no longer freezes.** It ignored an empty animation
->   name and kept its compile-time default forever, while the splash beside it
->   kept changing. Both now read "no instruction" the same way.
->
-> **We do not own any of this, and there is a reason it carries no licence.**
-> Read Hermann's own warning first — it is in his README under *Licensing gray
-> area warning*. The short version in his words: the code itself is
-> non-proprietary, but the repository ships Anthropic's proprietary brand fonts
-> (Tiempos Text, Styrene B) and the copyrighted Clawd mascot art, used without
-> permission, so he will not put a licence on it. He expects forks and says so.
->
-> That warning travels with this fork unchanged. Nothing here is ours to
-> license, and we grant you nothing: the risk sits with Anthropic's assets, not
-> with Hermann. Our contribution is the macOS work in the list above — take it
-> on the same terms, eyes open.
->
-> **Flashing from a Mac:**
->
-> ```
-> ./flash-mac.sh waveshare_amoled_216_c6
-> ```
->
-> It finds the USB port itself, and finds PlatformIO even when it is installed
-> in its own venv and absent from `PATH` — which is the usual case and used to
-> make the script claim it was not installed at all.
->
-> Two notes on juppeee's box below, which predates this fork: the Session
-> Browser is **no longer Windows-only** — that is what our
-> [macOS port](https://github.com/ryanmaule/claude-session-browser) is — so the
-> `COM5` flashing example there is the Windows half of the story. And his
-> "you only need this build if you want the device to react to Clawd" applies
-> here too, one layer further along: without our host you keep his animations
-> and our two fixes, but the display modes have nothing to drive them.
->
+# 🍎 Clawdmeter firmware for the macOS fork
+
+**Not the original, and not even the first fork.**
+[HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter) is
+the project — the device, the board ports, the LVGL work, the BLE service, the
+animation engine. [juppeee's `csb-buddy` branch](https://github.com/juppeee/Clawdmeter/tree/csb-buddy)
+then taught it to show *what Claude Code is doing* instead of guessing from
+quota burn. **This fork continues juppeee's branch.**
+
+**Why it exists:** to pair with
+[ryanmaule/claude-session-browser](https://github.com/ryanmaule/claude-session-browser),
+the macOS fork of the Claude Session Browser. That app is what drives the
+display modes below — no other host sends the field they need.
+
+**What this fork adds:** three display modes (usage / Clawd / switch to Clawd
+for a few seconds whenever Claude changes state), a footer that says
+`Needs you`, `Your turn`, `Limit reached` or `Idle` instead of rotating
+whimsical verbs forever, and a corner buddy that no longer freezes on its
+first animation.
+
+**With any other host** you still get juppeee's branch plus those last two
+fixes — the display modes simply have nothing to drive them.
+
+⚠️ **No licence, and not ours to give one.** Hermann's README explains why
+under *Licensing gray area warning*: the code is non-proprietary, but the
+repository ships Anthropic's brand fonts and the copyrighted Clawd mascot art
+without permission, so he will not license it. He expects forks and says so.
+That warning travels with this fork unchanged — the risk sits with Anthropic's
+assets, not with Hermann.
+
+**Flashing from a Mac:**
+
+```
+./flash-mac.sh waveshare_amoled_216_c6
+```
+
+It finds the USB port itself, and finds PlatformIO even when it lives in its
+own venv and is absent from `PATH` — the usual case, which used to make the
+script claim it was not installed at all.
+
+> ⚠️ **Everything below is juppeee's and Hermann's READMEs, edited in places.**
+> It reads like theirs because it mostly is. Note that juppeee's box predates
+> this fork: where it says the Session Browser is Windows-only and gives a
+> `COM5` flashing example, that is now the Windows half of the story.
+
+---
+
 > ### This is a fork
 >
 > The Clawdmeter — the device, this firmware, the board ports, the LVGL work,
