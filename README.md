@@ -19,10 +19,8 @@
 > footer works with juppeee's host too, since it reads the animation name his
 > app already sends.
 >
-> No licence, and not ours to grant one. Hermann explains why in his README
-> under *Licensing gray area warning*: the code itself is fine, but the repo
-> ships Anthropic's brand fonts and mascot art without permission, so he won't
-> put a licence on it. He expects people to fork it anyway, and says so.
+> No licence, here or upstream. Hermann explains why in
+> [his README](https://github.com/HermannBjorgvin/Clawdmeter#licensing-gray-area-warning).
 >
 > Flashing from a Mac:
 >
