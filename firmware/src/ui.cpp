@@ -236,6 +236,7 @@ static char host_anim[24] = "";
 // Buddy zeigen. Voreinstellung ist das bisherige Verhalten.
 static int  screen_mode = SCREEN_MODE_USAGE;
 static uint32_t auto_splash_until = 0;   // 0 = kein automatischer Rueckweg offen
+static uint32_t auto_splash_started = 0;  // nur fuers Protokoll: wie lange stand er wirklich
 #define AUTO_SPLASH_MS 5000
 static lv_image_dsc_t battery_dscs[5];  // empty, low, medium, full, charging
 
@@ -742,7 +743,11 @@ void ui_tick_anim(void) {
     // Funktion nicht mehr dran -- der Rueckweg muss also hier stehen.
     if (auto_splash_until && (int32_t)(millis() - auto_splash_until) >= 0) {
         auto_splash_until = 0;
-        if (current_screen == SCREEN_SPLASH) ui_show_screen(SCREEN_USAGE);
+        if (current_screen == SCREEN_SPLASH) {
+            Serial.printf("auto splash: %lu ms sichtbar\n",
+                          (unsigned long)(millis() - auto_splash_started));
+            ui_show_screen(SCREEN_USAGE);
+        }
     }
     if (current_screen != SCREEN_USAGE) return;
     update_view_state();
@@ -889,8 +894,16 @@ void ui_set_host_anim(const char* name) {
     // diesem Modus, und nur wenn sich wirklich etwas geaendert hat -- sonst
     // spraenge die Anzeige bei jedem Paket.
     if (changed && screen_mode == SCREEN_MODE_AUTO) {
+        // Die Frist gilt dem Bildschirmwechsel, nicht der Animation: ein neuer
+        // Zustand waehrend der Buddy schon steht wird nicht verschluckt --
+        // splash_set_anim() zeigt ihn sofort, und die Frist beginnt von vorn,
+        // damit auch der Neue seine vollen Sekunden bekommt.
+        if (current_screen != SCREEN_SPLASH) {
+            auto_splash_started = millis();
+            ui_show_screen(SCREEN_SPLASH);
+            Serial.printf("auto splash: zeige %s\n", host_anim);
+        }
         auto_splash_until = millis() + AUTO_SPLASH_MS;
-        if (current_screen != SCREEN_SPLASH) ui_show_screen(SCREEN_SPLASH);
     }
 }
 

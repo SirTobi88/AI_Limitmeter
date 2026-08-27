@@ -1,3 +1,29 @@
+> ### This is a fork of a fork
+>
+> Hermann Björgvin wrote the Clawdmeter. juppeee's `csb-buddy` branch taught it
+> to show what Claude Code is doing. This fork continues that branch and adds
+> what a **Mac** needs, alongside the macOS port of the
+> [Session Browser](https://github.com/ryanmaule/claude-session-browser):
+>
+> - **Three display modes** (`sm` in the payload): the usage numbers, the big
+>   Clawd, or — the interesting one — switch to the big Clawd for five seconds
+>   whenever Claude changes state, then back to the numbers.
+> - **A usage-screen footer that means something.** The whimsical verbs used to
+>   run on a timer whenever the link was healthy, whether Claude was compiling
+>   or idle since lunch. They now stay where they belong — active work — and
+>   the footer says `Needs you`, `Your turn`, `Limit reached` or `Idle`
+>   otherwise, colour-coded so it reads across a room.
+> - **A corner buddy that no longer freezes.** It ignored an empty animation
+>   name and kept its compile-time default forever, while the splash beside it
+>   kept changing. Both now read "no instruction" the same way.
+>
+> **We do not own any of this.** The copyright is Hermann's, and neither his
+> repository nor juppeee's carries a licence — so no rights are granted to us,
+> and none are granted by us to you. This fork exists so the macOS work is
+> visible and reviewable, not as a distribution you may rely on. If you want to
+> use it, the right thing is to ask Hermann for a licence — we would like one
+> too.
+>
 > ### This is a fork
 >
 > The Clawdmeter — the device, this firmware, the board ports, the LVGL work,
