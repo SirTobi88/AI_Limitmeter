@@ -1,38 +1,39 @@
-# Clawdmeter firmware, macOS fork
-
-Hermann Björgvin's Clawdmeter, by way of
-[juppeee's `csb-buddy` branch](https://github.com/juppeee/Clawdmeter/tree/csb-buddy),
-which taught the device to show what Claude Code is doing instead of guessing
-from how fast your quota burns. This fork continues that branch.
-
-It pairs with
-[ryanmaule/claude-session-browser](https://github.com/ryanmaule/claude-session-browser),
-the macOS fork of the Session Browser. That app sends the field the display
-modes read; no other host does.
-
-Added here: three display modes (usage, Clawd, or switch to Clawd for a few
-seconds each time Claude changes state), a footer that says `Needs you`,
-`Your turn`, `Limit reached` or `Idle` instead of cycling verbs forever, and a
-corner buddy that no longer freezes on its first animation. Run it with any
-other host and you get the last two.
-
-No licence, and not ours to grant one. Hermann explains why in his README under
-*Licensing gray area warning*: the code itself is fine, but the repo ships
-Anthropic's brand fonts and mascot art without permission, so he won't put a
-licence on it. He expects people to fork it anyway, and says so.
-
-Flashing from a Mac:
-
-```
-./flash-mac.sh waveshare_amoled_216_c6
-```
-
-It finds the USB port and PlatformIO on its own, including the venv install
-that never lands on `PATH`.
-
-One note on juppeee's box below, written before this fork existed: where he
-says the Session Browser is Windows-only and flashes from `COM5`, that is now
-the Windows half of the story.
+> [!IMPORTANT]
+> ## Clawdmeter firmware, macOS fork
+>
+> Hermann Björgvin's Clawdmeter, by way of
+> [juppeee's `csb-buddy` branch](https://github.com/juppeee/Clawdmeter/tree/csb-buddy),
+> which taught the device to show what Claude Code is doing instead of guessing
+> from how fast your quota burns. This fork continues that branch.
+>
+> It pairs with
+> [ryanmaule/claude-session-browser](https://github.com/ryanmaule/claude-session-browser),
+> the macOS fork of the Session Browser. That app sends the field the display
+> modes read; no other host does.
+>
+> Added here: three display modes (usage, Clawd, or switch to Clawd for a few
+> seconds each time Claude changes state), a footer that says `Needs you`,
+> `Your turn`, `Limit reached` or `Idle` instead of cycling verbs forever, and a
+> corner buddy that no longer freezes on its first animation. Run it with any
+> other host and you get the last two.
+>
+> No licence, and not ours to grant one. Hermann explains why in his README
+> under *Licensing gray area warning*: the code itself is fine, but the repo
+> ships Anthropic's brand fonts and mascot art without permission, so he won't
+> put a licence on it. He expects people to fork it anyway, and says so.
+>
+> Flashing from a Mac:
+>
+> ```
+> ./flash-mac.sh waveshare_amoled_216_c6
+> ```
+>
+> It finds the USB port and PlatformIO on its own, including the venv install
+> that never lands on `PATH`.
+>
+> One note on juppeee's box below, written before this fork existed: where he
+> says the Session Browser is Windows-only and flashes from `COM5`, that is now
+> the Windows half of the story.
 
 ---
 
