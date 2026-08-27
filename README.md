@@ -18,10 +18,7 @@
 > verbs forever. The corner and the modes need fields only our app sends; the
 > footer works with juppeee's host too, since it reads the animation name his
 > app already sends.
->
-> Hermann is heading for the same corner from another direction — his newest
-> work plays the official Clawd still in that logo slot on PSRAM boards. When
-> that reaches this branch, one of the two should go.
+
 >
 > No licence, and not ours to grant one. Hermann explains why in his README
 > under *Licensing gray area warning*: the code itself is fine, but the repo
