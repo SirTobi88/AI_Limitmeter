@@ -31,9 +31,8 @@
 > It finds the USB port and PlatformIO on its own, including the venv install
 > that never lands on `PATH`.
 >
-> One note on juppeee's box below, written before this fork existed: where he
-> says the Session Browser is Windows-only and flashes from `COM5`, that is now
-> the Windows half of the story.
+> The rest of this README is upstream's, updated where our changes affect it.
+> Worth a read.
 
 ---
 
@@ -46,7 +45,7 @@
 >
 > This branch (`csb-buddy`) adds what the
 > **[Claude Session Browser](https://github.com/juppeee/claude-session-browser)**
-> needs on Windows, so the device shows *what Claude Code is doing* rather than
+> needs, so the device shows *what Claude Code is doing* rather than
 > only how fast the quota is burning:
 >
 > - **A field in the BLE payload** (`a`) so a host can name the animation to
@@ -70,12 +69,13 @@
 > the usage meter and battery, Hermann's firmware works with the Session
 > Browser as it is — it simply ignores the extra field.
 >
-> The Session Browser is Windows-only, so that's the flashing command that
-> matters here — from this branch, with your device's COM port:
+> Flashing this branch, with your device's port:
 >
 > ```
 > pio run -d firmware -e waveshare_amoled_216_c6 -t upload --upload-port COM5
 > ```
+>
+> On a Mac, `./flash-mac.sh waveshare_amoled_216_c6` finds the port itself.
 >
 > Everything else about flashing is unchanged from upstream.
 >
