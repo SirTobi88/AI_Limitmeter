@@ -1,9 +1,12 @@
 > ### This is a fork of a fork
 >
 > Hermann Björgvin wrote the Clawdmeter. juppeee's `csb-buddy` branch taught it
-> to show what Claude Code is doing. This fork continues that branch and adds
-> what a **Mac** needs, alongside the macOS port of the
-> [Session Browser](https://github.com/ryanmaule/claude-session-browser):
+> to show what Claude Code is doing. **This fork exists to pair with the
+> [macOS port of the Session Browser](https://github.com/ryanmaule/claude-session-browser)**
+> — that host is what drives the display modes below, so on its own this
+> firmware gives you juppeee's branch plus two fixes.
+>
+> What it adds:
 >
 > - **Three display modes** (`sm` in the payload): the usage numbers, the big
 >   Clawd, or — the interesting one — switch to the big Clawd for five seconds
