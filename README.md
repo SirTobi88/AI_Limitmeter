@@ -32,6 +32,24 @@
 > with Hermann. Our contribution is the macOS work in the list above — take it
 > on the same terms, eyes open.
 >
+> **Flashing from a Mac:**
+>
+> ```
+> ./flash-mac.sh waveshare_amoled_216_c6
+> ```
+>
+> It finds the USB port itself, and finds PlatformIO even when it is installed
+> in its own venv and absent from `PATH` — which is the usual case and used to
+> make the script claim it was not installed at all.
+>
+> Two notes on juppeee's box below, which predates this fork: the Session
+> Browser is **no longer Windows-only** — that is what our
+> [macOS port](https://github.com/ryanmaule/claude-session-browser) is — so the
+> `COM5` flashing example there is the Windows half of the story. And his
+> "you only need this build if you want the device to react to Clawd" applies
+> here too, one layer further along: without our host you keep his animations
+> and our two fixes, but the display modes have nothing to drive them.
+>
 > ### This is a fork
 >
 > The Clawdmeter — the device, this firmware, the board ports, the LVGL work,
