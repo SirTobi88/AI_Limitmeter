@@ -237,7 +237,11 @@ static char host_anim[24] = "";
 static int  screen_mode = SCREEN_MODE_USAGE;
 static uint32_t auto_splash_until = 0;   // 0 = kein automatischer Rueckweg offen
 static uint32_t auto_splash_started = 0;  // nur fuers Protokoll: wie lange stand er wirklich
-#define AUTO_SPLASH_MS 5000
+// Sechseinhalb statt fuenf Sekunden: die ersten ein bis zwei davon gehen fuer
+// den Neuaufbau des Splash drauf (LVGL malt in Streifen), sichtbar animiert
+// wird also deutlich kuerzer als die Frist laeuft. Gemessen: 5003 ms Standzeit
+// fuehlten sich wie drei an.
+#define AUTO_SPLASH_MS 6500
 static lv_image_dsc_t battery_dscs[5];  // empty, low, medium, full, charging
 
 // ---- Live-data freshness → which usage sub-view to show ----
