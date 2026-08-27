@@ -500,6 +500,11 @@ void splash_pick_for_current_rate(void) {
     render_frame(a->frames[0], a->palette);
 }
 
+const char* splash_current_anim_name(void) {
+    if (SPLASH_ANIM_COUNT == 0) return "";
+    return splash_anims[cur_anim].name;
+}
+
 bool splash_is_active(void) { return active; }
 
 void splash_request_full_redraw(void) {

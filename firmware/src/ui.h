@@ -19,6 +19,10 @@ void ui_toggle_splash(void);
 // splash_set_anim() bekommt.
 void ui_set_corner_creature(bool on);
 void ui_set_corner_anim(const char* name);
+
+// Derselbe Zustandsname noch einmal fuer die Fusszeile des Usage-Screens:
+// arbeitet Claude, laeuft die Wortliste; wartet er auf dich, steht es da.
+void ui_set_host_anim(const char* name);
 screen_t ui_get_current_screen(void);
 void ui_update_ble_status(ble_state_t state, const char* name, const char* mac);
 void ui_update_battery(int percent, bool charging);

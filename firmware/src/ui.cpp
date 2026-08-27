@@ -225,7 +225,13 @@ static lv_obj_t* logo_img;
 // es beim Logo wie bisher.
 static splash_mini_t* usage_mini = NULL;
 static bool usage_creature_on = false;
+// Treibt der Host die Animation? Wenn nicht, folgt die Ecke der Wahl des
+// Geraets -- und zwar fortlaufend, nicht nur wenn gerade ein Paket kommt.
+static bool usage_creature_host_driven = false;
 static char usage_creature_anim[24] = "idle breathe";
+// Was der Host zuletzt als Zustand gemeldet hat ("" = keine Vorgabe). Treibt
+// neben dem Buddy auch die Fusszeile des Usage-Screens.
+static char host_anim[24] = "";
 static lv_image_dsc_t battery_dscs[5];  // empty, low, medium, full, charging
 
 // ---- Live-data freshness → which usage sub-view to show ----
@@ -708,11 +714,38 @@ static void update_view_state(void) {
     apply_corner_creature();
 }
 
+// Fusszeile fuer den vom Host gemeldeten Zustand. NULL heisst "nichts zu
+// sagen" -- dann laeuft die Wortliste weiter. Arbeitszustaende geben bewusst
+// NULL zurueck: genau dort gehoert die Wortliste hin.
+static const char* footer_for_host_anim(lv_color_t* col) {
+    if (!host_anim[0]) return NULL;
+    // Die Farbe sagt schon aus zwei Metern, ob etwas ansteht: Bernstein
+    // heisst "der Rechner wartet auf dich", Gruen "Claude ist fertig", Rot
+    // "Limit". Grau tritt zurueck, wenn ohnehin nichts passiert.
+    if (strcmp(host_anim, "allow") == 0) { *col = COL_AMBER; return "Needs you"; }
+    if (strcmp(host_anim, "done") == 0)  { *col = COL_GREEN; return "Your turn"; }
+    if (strcmp(host_anim, "limit") == 0) { *col = COL_RED;   return "Limit reached"; }
+    if (strcmp(host_anim, "idle breathe") == 0 ||
+        strcmp(host_anim, "idle blink") == 0 ||
+        strcmp(host_anim, "idle look around") == 0 ||
+        strcmp(host_anim, "expression sleep") == 0) { *col = COL_DIM; return "Idle"; }
+    return NULL;                       // Arbeit, Tanz, Zwinkern: Wortliste
+}
+
 void ui_tick_anim(void) {
     if (current_screen != SCREEN_USAGE) return;
     update_view_state();
     if (view_state == 1) splash_mini_tick();   // animate the sleeping creature on the idle screen
-    else if (view_state == 2 && usage_creature_on) splash_mini_tick_one(usage_mini);
+    else if (view_state == 2 && usage_creature_on) {
+        // Ohne Vorgabe vom Host waehlt der Splash die Animation -- beim
+        // Aufblenden und danach im eigenen Takt. Die Ecke nur beim Eintreffen
+        // eines Pakets nachzuziehen reicht deshalb nicht: dazwischen zeigten
+        // beide verschiedene Tiere. Also bei jedem Tick nachfuehren; ist der
+        // Name unveraendert, tut splash_mini_set_anim() ohnehin nichts.
+        if (!usage_creature_host_driven)
+            splash_mini_set_anim(usage_mini, splash_current_anim_name());
+        splash_mini_tick_one(usage_mini);
+    }
 
     uint32_t now = lv_tick_get();
 
@@ -750,14 +783,27 @@ void ui_tick_anim(void) {
 
     // Status text by priority. Whimsical messages only when connected & settled.
     const char* text;
+    // Voreinstellung wie bisher; die Zweige unten faerben um, wo es etwas zu
+    // sagen gibt. Ohne Verbindung und ohne Daten tritt die Zeile zurueck --
+    // sie meldet dann nichts ueber Claude, sondern ueber sich selbst.
+    lv_color_t col = COL_ACCENT;
     if (!s_ble_connected) {
         text = "Waiting";              // advertising / waiting for a host connection
+        col = COL_DIM;
     } else if (view_state == 1) {      // idle — alternate so it reads as alive AND data-less
         text = (anim_msg_idx & 1) ? "No data" : "Listening";
+        col = COL_DIM;
     } else if (now - connected_at_ms < 5000) {
         text = "Connected";
+        col = COL_GREEN;
     } else {
-        text = anim_messages[anim_msg_idx];
+        // Die Wortliste gehoert zur Arbeit. Sie lief bisher immer, auch wenn
+        // Claude seit einer Stunde nichts tat -- huebsch, aber ohne Aussage.
+        // Meldet der Host einen Zustand, der gerade *nicht* Arbeit ist, sagt
+        // die Zeile lieber, worauf es ankommt. Ohne Vorgabe bleibt alles wie
+        // gehabt.
+        const char* state_text = footer_for_host_anim(&col);
+        text = state_text ? state_text : anim_messages[anim_msg_idx];
     }
 
     // All states share the whimsical style: "<glyph> <Title-case word>…"
@@ -765,6 +811,7 @@ void ui_tick_anim(void) {
     snprintf(buf, sizeof(buf), "%s %s\xE2\x80\xA6",
              spinner_frames[anim_spinner_idx], text);
     lv_label_set_text(lbl_anim, buf);
+    lv_obj_set_style_text_color(lbl_anim, col, 0);
 }
 
 static screen_t prev_non_splash_screen = SCREEN_USAGE;
@@ -802,7 +849,28 @@ void ui_set_corner_creature(bool on) {
 }
 
 
+void ui_set_host_anim(const char* name) {
+    // Zwinkern und Erschrecken sind Momente, keine Zustaende: sie blitzen
+    // ein paar Sekunden auf und sagen nichts darueber aus, ob Claude
+    // arbeitet oder wartet. Der Buddy zeigt sie (der laeuft ueber
+    // ui_set_corner_anim), die Fusszeile laesst sie durch -- sonst stuende
+    // waehrend eines Zwinkerns "Accomplishing..." da, obwohl gerade nichts
+    // passiert, oder "Idle", obwohl Claude laeuft.
+    if (name && (strcmp(name, "expression wink") == 0 ||
+                 strcmp(name, "expression surprise") == 0)) return;
+    if (name && name[0]) strlcpy(host_anim, name, sizeof(host_anim));
+    else                 host_anim[0] = '\0';
+}
+
+
 void ui_set_corner_anim(const char* name) {
+    // Kein Name heisst nicht "nichts tun". Der Host schickt "" wenn er nichts
+    // zu spiegeln hat -- der Splash nimmt das als "such dir selbst was aus".
+    // Tat die Ecke stattdessen gar nichts, blieb sie fuer immer auf der
+    // Animation stehen, mit der sie gebaut wurde, waehrend der Splash daneben
+    // munter wechselte. Also dieselbe Lesart wie dort.
+    usage_creature_host_driven = (name && name[0]);
+    if (!usage_creature_host_driven) name = splash_current_anim_name();
     if (!name || !name[0]) return;
     strlcpy(usage_creature_anim, name, sizeof(usage_creature_anim));
     splash_mini_set_anim(usage_mini, usage_creature_anim);

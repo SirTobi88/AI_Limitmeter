@@ -458,6 +458,7 @@ void loop() {
             splash_set_anim(usage.anim);
             // Dieselbe Animation zusaetzlich klein in der Ecke des
             // Usage-Screens, wenn der Host das moechte.
+            ui_set_host_anim(usage.anim);
             ui_set_corner_creature(usage.corner_anim);
             if (usage.corner_anim) ui_set_corner_anim(usage.anim);
             if (g_after != g_before) {
