@@ -17,12 +17,17 @@
 >   name and kept its compile-time default forever, while the splash beside it
 >   kept changing. Both now read "no instruction" the same way.
 >
-> **We do not own any of this.** The copyright is Hermann's, and neither his
-> repository nor juppeee's carries a licence — so no rights are granted to us,
-> and none are granted by us to you. This fork exists so the macOS work is
-> visible and reviewable, not as a distribution you may rely on. If you want to
-> use it, the right thing is to ask Hermann for a licence — we would like one
-> too.
+> **We do not own any of this, and there is a reason it carries no licence.**
+> Read Hermann's own warning first — it is in his README under *Licensing gray
+> area warning*. The short version in his words: the code itself is
+> non-proprietary, but the repository ships Anthropic's proprietary brand fonts
+> (Tiempos Text, Styrene B) and the copyrighted Clawd mascot art, used without
+> permission, so he will not put a licence on it. He expects forks and says so.
+>
+> That warning travels with this fork unchanged. Nothing here is ours to
+> license, and we grant you nothing: the risk sits with Anthropic's assets, not
+> with Hermann. Our contribution is the macOS work in the list above — take it
+> on the same terms, eyes open.
 >
 > ### This is a fork
 >
