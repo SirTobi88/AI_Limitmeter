@@ -232,6 +232,11 @@ static char usage_creature_anim[24] = "idle breathe";
 // Was der Host zuletzt als Zustand gemeldet hat ("" = keine Vorgabe). Treibt
 // neben dem Buddy auch die Fusszeile des Usage-Screens.
 static char host_anim[24] = "";
+// Anzeigemodus: 0 = immer Usage, 1 = immer Buddy, 2 = bei Aktivitaet kurz den
+// Buddy zeigen. Voreinstellung ist das bisherige Verhalten.
+static int  screen_mode = SCREEN_MODE_USAGE;
+static uint32_t auto_splash_until = 0;   // 0 = kein automatischer Rueckweg offen
+#define AUTO_SPLASH_MS 5000
 static lv_image_dsc_t battery_dscs[5];  // empty, low, medium, full, charging
 
 // ---- Live-data freshness → which usage sub-view to show ----
@@ -733,6 +738,12 @@ static const char* footer_for_host_anim(lv_color_t* col) {
 }
 
 void ui_tick_anim(void) {
+    // Vor dem Ausstieg unten: waehrend der Splash laeuft, kommt der Rest der
+    // Funktion nicht mehr dran -- der Rueckweg muss also hier stehen.
+    if (auto_splash_until && (int32_t)(millis() - auto_splash_until) >= 0) {
+        auto_splash_until = 0;
+        if (current_screen == SCREEN_SPLASH) ui_show_screen(SCREEN_USAGE);
+    }
     if (current_screen != SCREEN_USAGE) return;
     update_view_state();
     if (view_state == 1) splash_mini_tick();   // animate the sleeping creature on the idle screen
@@ -849,6 +860,18 @@ void ui_set_corner_creature(bool on) {
 }
 
 
+void ui_set_screen_mode(int mode) {
+    if (mode < SCREEN_MODE_USAGE || mode > SCREEN_MODE_AUTO) mode = SCREEN_MODE_USAGE;
+    if (mode == screen_mode) return;
+    screen_mode = mode;
+    auto_splash_until = 0;
+    // Nur beim Wechsel durchgreifen. Danach bleibt das Antippen frei: der
+    // Modus soll die Anzeige einrichten, nicht mit dem Finger streiten.
+    if (mode == SCREEN_MODE_BUDDY)      ui_show_screen(SCREEN_SPLASH);
+    else                                ui_show_screen(SCREEN_USAGE);
+}
+
+
 void ui_set_host_anim(const char* name) {
     // Zwinkern und Erschrecken sind Momente, keine Zustaende: sie blitzen
     // ein paar Sekunden auf und sagen nichts darueber aus, ob Claude
@@ -858,8 +881,17 @@ void ui_set_host_anim(const char* name) {
     // passiert, oder "Idle", obwohl Claude laeuft.
     if (name && (strcmp(name, "expression wink") == 0 ||
                  strcmp(name, "expression surprise") == 0)) return;
+    bool changed = name && name[0] && strcmp(name, host_anim) != 0;
     if (name && name[0]) strlcpy(host_anim, name, sizeof(host_anim));
     else                 host_anim[0] = '\0';
+
+    // Neuer Zustand: einmal gross zeigen, dann zurueck zu den Zahlen. Nur in
+    // diesem Modus, und nur wenn sich wirklich etwas geaendert hat -- sonst
+    // spraenge die Anzeige bei jedem Paket.
+    if (changed && screen_mode == SCREEN_MODE_AUTO) {
+        auto_splash_until = millis() + AUTO_SPLASH_MS;
+        if (current_screen != SCREEN_SPLASH) ui_show_screen(SCREEN_SPLASH);
+    }
 }
 
 
@@ -879,6 +911,9 @@ void ui_set_corner_anim(const char* name) {
 
 static void global_click_cb(lv_event_t* e) {
     (void)e;
+    // Wer selbst umschaltet, soll nicht Sekunden spaeter zurueckgerissen
+    // werden: der automatische Rueckweg ist damit erledigt.
+    auto_splash_until = 0;
     if (current_screen == SCREEN_SPLASH) ui_show_screen(prev_non_splash_screen);
     else                                  ui_show_screen(SCREEN_SPLASH);
 }

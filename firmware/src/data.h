@@ -16,6 +16,8 @@ struct UsageData {
                              // has no opinion, device picks by usage rate)
     bool corner_anim;        // show the buddy small in the usage screen's corner
                              // instead of the logo; false unless the host asks
+    int  screen_mode;        // 0 = always usage, 1 = always buddy, 2 = show the
+                             // buddy briefly whenever the state changes
     long clock_epoch;        // local wall-clock epoch (s) from daemon; 0 = not provided
     int  clock_fmt;          // 12 or 24 (hour format from daemon); defaults to 24
     bool ok;                 // data parse succeeded

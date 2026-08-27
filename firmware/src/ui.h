@@ -23,6 +23,14 @@ void ui_set_corner_anim(const char* name);
 // Derselbe Zustandsname noch einmal fuer die Fusszeile des Usage-Screens:
 // arbeitet Claude, laeuft die Wortliste; wartet er auf dich, steht es da.
 void ui_set_host_anim(const char* name);
+
+// Anzeigemodus des Geraets. AUTO zeigt bei jedem neuen Zustand kurz den
+// grossen Buddy und kehrt dann zu den Zahlen zurueck; Antippen bleibt in
+// jedem Modus frei und beendet einen laufenden Rueckweg.
+#define SCREEN_MODE_USAGE 0
+#define SCREEN_MODE_BUDDY 1
+#define SCREEN_MODE_AUTO  2
+void ui_set_screen_mode(int mode);
 screen_t ui_get_current_screen(void);
 void ui_update_ble_status(ble_state_t state, const char* name, const char* mac);
 void ui_update_battery(int percent, bool charging);

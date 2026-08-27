@@ -128,6 +128,8 @@ static bool parse_json(const char* json, UsageData* out) {
     strlcpy(out->anim, doc["a"] | "", sizeof(out->anim));
     // Absent (aelterer Host) → aus, also Logo wie bisher.
     out->corner_anim = doc["ua"] | false;
+    // Absent (aelterer Host) → 0, also Usage-Screen wie bisher.
+    out->screen_mode = doc["sm"] | 0;
     out->clock_epoch = doc["t"] | 0L;
     out->clock_fmt = doc["tf"] | 24;
     out->ok = doc["ok"] | false;
@@ -458,6 +460,9 @@ void loop() {
             splash_set_anim(usage.anim);
             // Dieselbe Animation zusaetzlich klein in der Ecke des
             // Usage-Screens, wenn der Host das moechte.
+            ui_set_screen_mode(usage.screen_mode);
+            // Nach dem Modus: im Auto-Modus loest ein neuer Zustandsname den
+            // kurzen Buddy aus, und dafuer muss der Modus schon stehen.
             ui_set_host_anim(usage.anim);
             ui_set_corner_creature(usage.corner_anim);
             if (usage.corner_anim) ui_set_corner_anim(usage.anim);
