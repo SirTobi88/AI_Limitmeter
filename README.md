@@ -4,7 +4,7 @@
 > The Clawdmeter — the device, the firmware, the board ports, the BLE service,
 > the animation engine — is
 > **[Hermann Björgvin's](https://github.com/HermannBjorgvin/Clawdmeter)**
-> project. This branch (`csb-combined`) collects work from three forks of it,
+> project. This fork collects work from three forks of it,
 > plus additions of its own, so the device shows *what Claude Code is doing*
 > rather than only how fast the quota burns:
 >
