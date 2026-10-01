@@ -1,87 +1,45 @@
 > [!IMPORTANT]
-> ## Clawdmeter firmware, macOS fork
+> ## This is a fork
 >
-> Hermann Björgvin's Clawdmeter, by way of
-> [juppeee's `csb-buddy` branch](https://github.com/juppeee/Clawdmeter/tree/csb-buddy),
-> which taught the device to show what Claude Code is doing instead of guessing
-> from how fast your quota burns. This fork continues that branch.
+> The Clawdmeter — the device, the firmware, the board ports, the BLE service,
+> the animation engine — is
+> **[Hermann Björgvin's](https://github.com/HermannBjorgvin/Clawdmeter)**
+> project. This branch (`csb-combined`) collects work from three forks of it,
+> plus one addition of its own, so the device shows *what Claude Code is doing*
+> rather than only how fast the quota burns:
 >
-> It pairs with
-> [ryanmaule/claude-session-browser](https://github.com/ryanmaule/claude-session-browser),
-> the macOS fork of the Session Browser. That app sends the field the display
-> modes read; no other host does.
+> - **[juppeee's `csb-buddy`](https://github.com/juppeee/Clawdmeter/tree/csb-buddy)**
+>   — a payload field (`a`) that lets the host name the animation, and five
+>   extra animations (done, think, write, allow, limit), reworked from
+>   [claudepix](https://claudepix.vercel.app).
+> - **[WHerzog-Germany's `csb-buddy`](https://github.com/WHerzog-Germany/Clawdmeter/tree/csb-buddy)**
+>   — BLE fixes (advertising that restarts itself, no owner claimed from a
+>   failed handshake, a per-board name like `Clawdmeter 35F9`), a USB plug-in
+>   animation, the Waveshare Knob-1.8 port with a round layout, LCD-1.54 fixes,
+>   and a daemon that reports a used-up limit instead of going quiet.
+> - **[ryanmaule's `csb-buddy`](https://github.com/ryanmaule/Clawdmeter/tree/csb-buddy)**
+>   — three display modes (usage, Clawd, or Clawd for a few seconds on each
+>   state change), an animated corner buddy, and a footer that says
+>   `Needs you`, `Your turn`, `Limit reached` or `Idle`.
+> - **Here:** the macOS daemon drives all of that itself from Claude Code
+>   hooks — no Session Browser needed. Install the hooks once and opt in:
 >
-> Added here: the usage screen's corner shows the buddy instead of the static
-> logo that normally sits there, three display modes (usage, Clawd, or switch to
-> Clawd for a few seconds each time Claude changes state), and a footer that
-> says `Needs you`, `Your turn`, `Limit reached` or `Idle` instead of cycling
-> verbs forever. The corner and the modes need fields only our app sends; the
-> footer works with juppeee's host too, since it reads the animation name his
-> app already sends.
+>   ```bash
+>   daemon/.venv/bin/python daemon/clawd_activity.py --install
+>   ```
+>
+>   then add `activity = on` to `~/.config/claude-usage-monitor/config`
+>   (options in [`daemon/config.example`](daemon/config.example)).
+>
+> The branch is based on upstream as of July 2026, so it predates upstream's
+> official 60×60 Clawd animations. Tested on a Waveshare ESP32-S3-Touch-LCD-1.54.
 >
 > No licence, here or upstream. Hermann explains why in
 > [his README](https://github.com/HermannBjorgvin/Clawdmeter#licensing-gray-area-warning).
+> Anything broken here is this fork's doing, not Hermann's — open an issue
+> here, not on his tracker.
 >
-> Flashing from a Mac:
->
-> ```
-> ./flash-mac.sh waveshare_amoled_216_c6
-> ```
->
-> It finds the USB port and PlatformIO on its own, including the venv install
-> that never lands on `PATH`.
->
-> The rest of this README is upstream's, updated where our changes affect it.
-> Worth a read.
-
----
-
-> ### This is a fork
->
-> The Clawdmeter — the device, this firmware, the board ports, the LVGL work,
-> the BLE service, the animation engine — is
-> **[Hermann Björgvin's](https://github.com/HermannBjorgvin/Clawdmeter)**
-> project. Everything below this box is his README, unchanged.
->
-> This branch (`csb-buddy`) adds what the
-> **[Claude Session Browser](https://github.com/juppeee/claude-session-browser)**
-> needs, so the device shows *what Claude Code is doing* rather than
-> only how fast the quota is burning:
->
-> - **A field in the BLE payload** (`a`) so a host can name the animation to
->   play. Without a host naming one, nothing changes.
-> - **Five more animations** — done, think, write, allow, limit — for states the
->   stock set doesn't cover. Reworked and partly redrawn from
->   [claudepix](https://claudepix.vercel.app).
-> - **A fixed 90° rotation** on the C6-2.16, because I mount mine with the
->   buttons on top. Upstream has rotation disabled on this board; enabling it
->   revealed that bitmaps larger than the strip buffer were drawn unrotated, so
->   that path is rewritten to work in slices.
-> - **A full splash rebuild after a screen switch**, needed because this build
->   flips to the usage screen on its own every few minutes. LVGL repaints in
->   strips, and the deferred rebuild left half a buddy behind.
->
-> None of that is a fix to Hermann's project — every one of these exists
-> because of a choice made here. That's why this is a fork and not a pull
-> request.
->
-> **You only need this build if you want the device to react to Clawd.** For
-> the usage meter and battery, Hermann's firmware works with the Session
-> Browser as it is — it simply ignores the extra field.
->
-> Flashing this branch, with your device's port:
->
-> ```
-> pio run -d firmware -e waveshare_amoled_216_c6 -t upload --upload-port COM5
-> ```
->
-> On a Mac, `./flash-mac.sh waveshare_amoled_216_c6` finds the port itself.
->
-> Everything else about flashing is unchanged from upstream.
->
-> Anything broken here is my doing, not Hermann's — open an issue
-> [on the fork](https://github.com/juppeee/Clawdmeter/issues), not on his
-> tracker.
+> The rest of this README is upstream's.
 
 # Clawdmeter
 
