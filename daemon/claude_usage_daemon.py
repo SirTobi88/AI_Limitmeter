@@ -60,6 +60,12 @@ API_BODY = {
 }
 
 
+class TokenExpired(Exception):
+    """Raised by poll_api on a 401/403 — the access token is dead. The daemon never
+    refreshes (pure free-ride: Claude Code owns refreshing), so the caller just
+    signals "No data" to the device until the CLI re-seeds the token."""
+
+
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
@@ -81,12 +87,15 @@ def _extract_access_token(blob: str) -> str | None:
         data = None
     if isinstance(data, dict):
         # direct: {"accessToken": "..."}
-        if isinstance(data.get("accessToken"), str):
-            return data["accessToken"]
+        tok = data.get("accessToken")
+        if isinstance(tok, str) and tok.strip():
+            return tok
         # nested: {"claudeAiOauth": {"accessToken": "..."}}
         for v in data.values():
-            if isinstance(v, dict) and isinstance(v.get("accessToken"), str):
-                return v["accessToken"]
+            if isinstance(v, dict):
+                tok = v.get("accessToken")
+                if isinstance(tok, str) and tok.strip():
+                    return tok
     m = re.search(r'"accessToken"\s*:\s*"([^"]+)"', blob)
     if m:
         return m.group(1)
@@ -96,7 +105,29 @@ def _extract_access_token(blob: str) -> str | None:
     return None
 
 
+def _decode_keychain_blob(raw: str) -> str:
+    """Transparently decode a hex-dumped Keychain secret back to text.
+
+    ``security … -w`` prints the password as a continuous hex string whenever
+    the stored bytes aren't cleanly printable (e.g. an embedded newline). A
+    normal credentials blob is JSON, which is never valid hex (it contains
+    '{', '"', …), so all-hex detection is unambiguous and safe.
+    """
+    s = raw.strip()
+    if s and len(s) % 2 == 0 and re.fullmatch(r"[0-9a-fA-F]+", s):
+        try:
+            return bytes.fromhex(s).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return raw
+    return raw
+
+
 def _read_token_keychain() -> str | None:
+    """Read the OAuth access token from the macOS Keychain, or None.
+
+    ``security … -w`` may hex-dump the stored secret (see _decode_keychain_blob),
+    so decode before extracting the access token.
+    """
     try:
         out = subprocess.run(
             [
@@ -119,7 +150,7 @@ def _read_token_keychain() -> str | None:
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         log(f"Keychain access error: {e}")
         return None
-    return _extract_access_token(out.stdout)
+    return _extract_access_token(_decode_keychain_blob(out.stdout))
 
 
 def read_config_dirs() -> list[Path]:
@@ -444,6 +475,9 @@ async def poll_api(token: str) -> dict | None:
     except httpx.HTTPError as e:
         log(f"API call failed: {e}")
         return None
+    if resp.status_code in (401, 403):
+        log(f"API HTTP {resp.status_code} (token expired/invalid)")
+        raise TokenExpired()
     if resp.status_code >= 400:
         # A 429 means the plan's limit is used up — which rejects this probe
         # too — but it still carries the rate-limit headers, and that is the
@@ -579,30 +613,57 @@ class PlanSelector:
 _SELECTOR = PlanSelector()
 
 
-async def poll_active_payload(selector: PlanSelector = _SELECTOR) -> dict | None:
-    """Poll every configured config dir and return the active plan's payload.
+async def poll_active(selector: PlanSelector = _SELECTOR) -> tuple[dict | None, bool]:
+    """Poll every configured config dir; return ``(active_payload, all_dead)``.
 
-    Returns None when no dir yields a usable payload this cycle. A single
-    configured dir (the default) collapses to exactly the old single-poll path.
+    ``active_payload`` — the active plan's payload dict, or None when no dir
+    yields a usable payload this cycle. A single configured dir (the default)
+    collapses to exactly the old single-poll path.
+
+    ``all_dead`` — True when *every* configured dir lacked a usable token this
+    cycle (file/Keychain empty, or a 401/expired token), so the caller can
+    signal "No data". False when at least one token authenticated — including a
+    transient non-auth poll failure worth retrying silently rather than idling.
+
+    Pure free-ride: a 401 (TokenExpired) means that dir's token has expired and
+    only Claude Code (its owner) can re-seed it — we never refresh it ourselves.
     """
     dirs = read_config_dirs()
     payloads: dict[Path, dict] = {}
     sessions: dict[Path, int] = {}
+    any_live = False
     for d in dirs:
         token = read_token_for(d)
         if not token:
             log(f"No token in {d}; skipping")
             continue
-        payload = await poll_api(token)
+        try:
+            payload = await poll_api(token)
+        except TokenExpired:
+            log(f"Token in {d} expired/invalid; skipping")
+            continue
+        # Authenticated: a transient None here isn't an auth failure, so the
+        # dir counts as live and we stay silent rather than idling the device.
+        any_live = True
         if payload is not None:
             payloads[d] = payload
             sessions[d] = int(payload.get("s", 0) or 0)
     if not payloads:
-        return None
+        return None, not any_live
     active = selector.choose(sessions)
     if len(dirs) > 1:
         log(f"Active plan: {active} (s={sessions[active]})")
-    return payloads[active]
+    return payloads[active], False
+
+
+async def poll_active_payload(selector: PlanSelector = _SELECTOR) -> dict | None:
+    """The active plan's payload, or None when no dir yields one this cycle.
+
+    Thin wrapper over :func:`poll_active` for callers that don't need the
+    all-dead flag.
+    """
+    payload, _dead = await poll_active(selector)
+    return payload
 
 
 class Session:
@@ -778,16 +839,37 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
             elapsed = now - last_poll
             if session.refresh_requested.is_set() or elapsed >= POLL_INTERVAL:
                 session.refresh_requested.clear()
-                payload = await poll_active_payload()
-                if payload is None:
-                    log("No usable config dir this cycle")
-                else:
+                # Pure free-ride: read whatever access token(s) Claude Code
+                # currently holds across the configured config dirs and NEVER
+                # refresh them ourselves. Claude Code (the token's owner) does all
+                # refreshing; refreshing here would race its rotation and feed the
+                # OAuth endpoint's rate limit (429). When no dir has a usable token
+                # we signal "No data" so the device idles instead of holding stale
+                # numbers until the CLI re-seeds it.
+                payload, dead = await poll_active()
+                if payload is not None:
                     last_anim = add_activity_fields(payload)
                     last_key = _activity_key(payload)
                     if await session.write_payload(payload):
                         last_poll = last_anim_sent = time.time()
                         last_payload = payload
                         used_successfully = True
+                elif dead:
+                    # No numbers to resend between polls until a token is back.
+                    last_payload = None
+                    # No live token in any config dir (missing, or a 401/expired
+                    # token) -> show "No data" now instead of stale numbers. Guard
+                    # last_poll on the write result (like the data path) so a
+                    # failed beat retries next tick instead of throttling what may
+                    # be a healthy link for a full POLL_INTERVAL.
+                    log("No usable token; signalling no-data to device — run "
+                        "`claude login` or use the CLI to let Claude Code renew it")
+                    if await session.write_payload({"ok": False}):
+                        last_poll = time.time()
+                else:
+                    # Transient poll failure (a live token that didn't answer this
+                    # cycle) -> stay silent and retry next tick.
+                    log("No usable config dir this cycle")
             elif last_payload is not None:
                 # Between polls, push a changed Claude Code state -- or a
                 # changed screen_mode / corner_buddy in the config -- right

@@ -135,9 +135,9 @@ def test_mode_change_is_sent_between_polls(tmp_path, monkeypatch):
 
     async def fake_poll():
         polls.append(1)
-        return {"s": 10, "w": 5, "ok": True}
+        return {"s": 10, "w": 5, "ok": True}, False
 
-    monkeypatch.setattr(mod, "poll_active_payload", fake_poll)
+    monkeypatch.setattr(mod, "poll_active", fake_poll)
 
     class FakeClient:
         is_connected = True
@@ -177,3 +177,47 @@ def test_mode_change_is_sent_between_polls(tmp_path, monkeypatch):
     assert writes[1]["sm"] == 0 and writes[1]["ua"] is False and writes[1]["s"] == 10
     assert "a" not in writes[2] and "sm" not in writes[2]   # opted out -> device decides
     assert len(writes) == 3
+
+
+def test_no_data_beat_stops_activity_resends(tmp_path, monkeypatch):
+    """After a dead-token poll the device shows "No data"; a Claude Code state
+    change must not resend the last numbers over it."""
+    import asyncio
+
+    cfg = tmp_path / "config"
+    cfg.write_text("activity = on\n")
+    monkeypatch.setattr(mod, "CONFIG_FILE", cfg)
+    monkeypatch.setattr(mod, "POLL_INTERVAL", 0.03)
+    monkeypatch.setattr(mod, "ACTIVITY_TICK", 0.01)
+    anims = iter(["done"] + ["allow"] * 1000)
+    monkeypatch.setattr(mod.clawd_activity, "current_anim", lambda limit_hit=False: next(anims))
+    results = iter([({"s": 10, "w": 5, "ok": True}, False)] + [(None, True)] * 1000)
+
+    async def fake_poll():
+        return next(results)
+
+    monkeypatch.setattr(mod, "poll_active", fake_poll)
+    writes = []
+
+    class FakeClient:
+        is_connected = True
+        def __init__(self, _t): pass
+        async def connect(self): pass
+        async def disconnect(self): pass
+        async def start_notify(self, *_a): pass
+        async def write_gatt_char(self, _u, data, response=False):
+            writes.append(json.loads(data))
+
+    monkeypatch.setattr(mod, "BleakClient", FakeClient)
+
+    async def scenario():
+        stop = asyncio.Event()
+        task = asyncio.create_task(mod.connect_and_run("AA:BB", stop))
+        await asyncio.sleep(0.15)
+        stop.set()
+        await task
+
+    asyncio.run(scenario())
+    assert writes[0]["a"] == "done"
+    first_dead = writes.index({"ok": False})
+    assert all(w == {"ok": False} for w in writes[first_dead:]), writes
