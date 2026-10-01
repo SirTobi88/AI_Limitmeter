@@ -100,15 +100,15 @@ configure_clock() {
     [ -t 0 ] || return 0
     local ans cur
     cur=$(current_config_value clock)
-    read -r -p "  Show a clock instead of the \"Usage\" title? [off/auto/12/24] (default off) " ans || ans=""
+    read -r -p "  Clock in place of the \"Usage\" title? [auto/12/24/off] (default auto) " ans || ans=""
     ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-    [ -z "$ans" ] && ans="off"
+    [ -z "$ans" ] && ans="auto"
     case "$ans" in
         off|auto|12|24) ;;
         *) echo "  Unrecognized '$ans' — leaving clock unchanged."; return 0 ;;
     esac
-    if [ "$ans" = "off" ] && { [ -z "$cur" ] || [ "$cur" = "off" ]; }; then
-        echo "  Clock off (default)."
+    if [ "$ans" = "auto" ] && { [ -z "$cur" ] || [ "$cur" = "auto" ]; }; then
+        echo "  Clock on, 12h/24h from this machine (default)."
         return 0
     fi
     upsert_config_key clock "$ans"
@@ -130,6 +130,23 @@ configure_chime() {
     else
         echo "  Chime off (default)."
     fi
+}
+
+# Offer the Claude Code hooks that let the device show what Claude is doing
+# (working, thinking, waiting for permission, done). Default yes; the daemon's
+# `activity = auto` switches itself on once they're installed. Only entries
+# that run clawd_activity.py are touched in ~/.claude/settings.json.
+configure_activity() {
+    local ans="y"
+    if [ -t 0 ]; then
+        read -r -p "  Show what Claude Code is doing on the device (installs Claude Code hooks)? [Y/n] " ans || ans=""
+    fi
+    if [[ "$ans" =~ ^[Nn]$ ]]; then
+        echo "  Skipped. Later: daemon/.venv/bin/python daemon/clawd_activity.py --install"
+        return 0
+    fi
+    "$PYTHON_BIN" "$SCRIPT_DIR/daemon/clawd_activity.py" --install | sed 's/^/  /'
+    echo "  The corner Clawd and the footer now follow Claude Code (corner_buddy = on, screen_mode = auto)."
 }
 
 echo "=== Clawdmeter macOS install ==="
@@ -207,11 +224,13 @@ sed \
 echo "  Installed: $PLIST_DST"
 echo ""
 
-# Interactive daemon configuration: which plans to poll, plus the optional
-# clock display and session-reset chime. All re-read by the daemon each poll.
+# Interactive daemon configuration: which plans to poll, the clock, the
+# Claude Code hooks and the session-reset chime. All re-read by the daemon
+# each poll.
 echo "[4/6] Configuring the daemon..."
 configure_config_dirs
 configure_clock
+configure_activity
 configure_chime
 echo ""
 

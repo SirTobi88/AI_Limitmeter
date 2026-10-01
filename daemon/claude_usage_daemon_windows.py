@@ -136,7 +136,8 @@ def read_chime_setting() -> str:
 def read_clock_setting() -> str:
     """Read the `clock` option from the config file. One of: off|auto|12|24.
 
-    Defaults to "off" so existing setups keep showing "Usage" until opted in.
+    Defaults to "auto": the device shows the time in place of the "Usage"
+    title, 12h or 24h as this machine is set. `clock = off` keeps "Usage".
     """
     try:
         if CONFIG_FILE.exists():
@@ -151,7 +152,7 @@ def read_clock_setting() -> str:
                         return val
     except OSError:
         pass
-    return "off"
+    return "auto"
 
 
 def add_chime_field(payload: dict) -> None:

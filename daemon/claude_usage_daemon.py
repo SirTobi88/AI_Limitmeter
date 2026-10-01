@@ -348,8 +348,8 @@ def read_chime_setting() -> str:
 def read_clock_setting() -> str:
     """Read the `clock` option from the config file. One of: off|auto|12|24.
 
-    Defaults to "off" (no clock; the device keeps showing "Usage") so existing
-    setups are unaffected until the user opts in.
+    Defaults to "auto": the device shows the time in place of the "Usage"
+    title, 12h or 24h as this machine is set. `clock = off` keeps "Usage".
     """
     try:
         if CONFIG_FILE.exists():
@@ -364,18 +364,20 @@ def read_clock_setting() -> str:
                         return val
     except OSError:
         pass
-    return "off"
+    return "auto"
 
 
 def read_activity_settings() -> dict:
-    """Read the buddy options: activity (off|on), screen_mode
+    """Read the buddy options: activity (auto|on|off), screen_mode
     (usage|clawd|auto), corner_buddy (on|off).
 
-    activity defaults to "off", so nothing is added to the payload and the
-    device keeps picking its own animations until the user opts in.
+    activity defaults to "auto": on once the Claude Code hooks are installed
+    (clawd_activity.py --install, which install-mac.sh offers), off until
+    then — without hooks there is no state to show, and "on" would only ever
+    report a sleeping Clawd.
     """
-    opts = {"activity": "off", "screen_mode": "auto", "corner_buddy": "on"}
-    allowed = {"activity": ("off", "on"),
+    opts = {"activity": "auto", "screen_mode": "auto", "corner_buddy": "on"}
+    allowed = {"activity": ("auto", "off", "on"),
                "screen_mode": ("usage", "clawd", "auto"),
                "corner_buddy": ("off", "on")}
     try:
@@ -409,7 +411,9 @@ def add_activity_fields(payload: dict) -> str | None:
     corner buddy switch ("ua") when the config opts in. Returns the animation
     name sent, or None when activity is off (fields omitted entirely)."""
     opts = read_activity_settings()
-    if opts["activity"] != "on":
+    active = opts["activity"] == "on" or (
+        opts["activity"] == "auto" and clawd_activity.is_installed())
+    if not active:
         for k in ("a", "sm", "ua"):
             payload.pop(k, None)
         return None

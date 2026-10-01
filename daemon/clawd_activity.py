@@ -165,6 +165,32 @@ def _strip_ours(groups: list) -> list:
     return out
 
 
+_installed_cache: dict = {}
+
+
+def is_installed(settings_path: Path = CLAUDE_SETTINGS) -> bool:
+    """True when our hook is registered in Claude Code's settings.json.
+    Cached on the file's mtime, so the daemon may ask every tick."""
+    try:
+        mtime = settings_path.stat().st_mtime
+    except OSError:
+        return False
+    key = str(settings_path)
+    hit = _installed_cache.get(key)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    try:
+        hooks = json.loads(settings_path.read_text()).get("hooks") or {}
+        found = any(_is_ours(h)
+                    for groups in hooks.values() if isinstance(groups, list)
+                    for g in groups if isinstance(g, dict)
+                    for h in g.get("hooks") or [])
+    except (OSError, ValueError, AttributeError):
+        found = False
+    _installed_cache[key] = (mtime, found)
+    return found
+
+
 def set_installed(on: bool, settings_path: Path = CLAUDE_SETTINGS) -> None:
     try:
         settings = json.loads(settings_path.read_text())

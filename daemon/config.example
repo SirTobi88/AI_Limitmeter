@@ -35,13 +35,13 @@
 #   on  = chime through the board speaker (boards with audio: AMOLED-2.16 / 1.8)
 chime = off
 # Show a clock on the Usage screen, in place of the "Usage" title.
-#   off  = no clock; the screen keeps showing "Usage" (default)
-#   auto = show the clock, auto-detecting 12h/24h from this machine's settings
+#   off  = no clock; the screen keeps showing "Usage"
+#   auto = show the clock, auto-detecting 12h/24h from this machine's settings (default)
 #          (detection can default to 24h when the daemon runs under launchd/systemd
 #           with no locale — set 12 or 24 explicitly below if auto guesses wrong)
 #   12   = show the clock, forced 12-hour  (e.g. 6:28 PM)
 #   24   = show the clock, forced 24-hour  (e.g. 18:28)
-clock = off
+# clock = auto
 
 # Which board this machine should drive, when several are paired with it
 # (Windows only). Each board advertises its own suffix — "Clawdmeter F629" —
@@ -55,12 +55,12 @@ clock = off
 
 # Show on the device what Claude Code is doing — thinking, writing, waiting for
 # your permission, done, out of quota (macOS daemon). Needs the Claude Code
-# hooks, installed once with:
+# hooks — install-mac.sh offers them, or install them yourself with:
 #   daemon/.venv/bin/python daemon/clawd_activity.py --install
-# and the csb-buddy firmware, which knows the animations and the fields.
-#   off = the device picks its own animations by usage rate (default)
-#   on  = the device mirrors Claude Code's state
-# activity = on
+#   auto = mirror Claude Code's state once the hooks are installed (default)
+#   on   = always send the state (shows a sleeping Clawd without hooks)
+#   off  = the device picks its own animations by usage rate
+# activity = auto
 # activity, screen_mode and corner_buddy take effect within a second, not at
 # the next poll.
 # What the device shows while activity is on:

@@ -105,10 +105,20 @@ def test_payload_fields_follow_config(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.clawd_activity, "current_anim",
                         lambda limit_hit=False: "limit" if limit_hit else "done")
 
+    # Default "auto": off until the hooks are installed, then on.
     cfg.write_text("clock = 24\n")
+    monkeypatch.setattr(mod.clawd_activity, "is_installed", lambda: False)
     p = {"s": 10, "w": 5}
     assert mod.add_activity_fields(p) is None
     assert "a" not in p and "sm" not in p and "ua" not in p
+    monkeypatch.setattr(mod.clawd_activity, "is_installed", lambda: True)
+    p = {"s": 10, "w": 5}
+    assert mod.add_activity_fields(p) == "done"
+    assert p == {"s": 10, "w": 5, "a": "done", "sm": 2, "ua": True}
+
+    cfg.write_text("activity = off\n")
+    p = {"s": 10, "w": 5}
+    assert mod.add_activity_fields(p) is None and "a" not in p
 
     cfg.write_text("activity = on\nscreen_mode = clawd\ncorner_buddy = off\n")
     p = {"s": 10, "w": 5}
@@ -221,3 +231,22 @@ def test_no_data_beat_stops_activity_resends(tmp_path, monkeypatch):
     assert writes[0]["a"] == "done"
     first_dead = writes.index({"ok": False})
     assert all(w == {"ok": False} for w in writes[first_dead:]), writes
+
+
+def test_is_installed_follows_settings(tmp_path):
+    settings = tmp_path / "settings.json"
+    assert ca.is_installed(settings) is False            # no file
+    settings.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [
+        {"type": "command", "command": "say done"}]}]}}))
+    assert ca.is_installed(settings) is False            # foreign hooks only
+    ca.set_installed(True, settings)
+    assert ca.is_installed(settings) is True
+    ca.set_installed(False, settings)
+    assert ca.is_installed(settings) is False
+
+
+def test_clock_defaults_to_auto(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, "CONFIG_FILE", tmp_path / "config")
+    assert mod.read_clock_setting() == "auto"
+    (tmp_path / "config").write_text("clock = off\n")
+    assert mod.read_clock_setting() == "off"

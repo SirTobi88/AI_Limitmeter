@@ -91,15 +91,15 @@ configure_clock() {
     [ -t 0 ] || return 0
     local ans cur
     cur=$(current_config_value clock)
-    read -r -p "  Show a clock instead of the \"Usage\" title? [off/auto/12/24] (default off) " ans || ans=""
+    read -r -p "  Clock in place of the \"Usage\" title? [auto/12/24/off] (default auto) " ans || ans=""
     ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-    [ -z "$ans" ] && ans="off"
+    [ -z "$ans" ] && ans="auto"
     case "$ans" in
         off|auto|12|24) ;;
         *) echo "  Unrecognized '$ans' — leaving clock unchanged."; return 0 ;;
     esac
-    if [ "$ans" = "off" ] && { [ -z "$cur" ] || [ "$cur" = "off" ]; }; then
-        echo "  Clock off (default)."
+    if [ "$ans" = "auto" ] && { [ -z "$cur" ] || [ "$cur" = "auto" ]; }; then
+        echo "  Clock on, 12h/24h from this machine (default)."
         return 0
     fi
     upsert_config_key clock "$ans"

@@ -24,15 +24,18 @@
 >   state change), an animated corner buddy, and a footer that says
 >   `Needs you`, `Your turn`, `Limit reached` or `Idle`.
 > - **Here:** the macOS daemon drives all of that itself from Claude Code
->   hooks — no Session Browser needed. After `./install-mac.sh`, install the
->   hooks once and opt in:
+>   hooks — no Session Browser needed. `./install-mac.sh` offers to install
+>   the hooks, and out of the box the device then shows the clock, the
+>   corner Clawd following Claude Code, and the big animation for a few
+>   seconds on each state change. Hooks later, by hand:
 >
 >   ```bash
 >   daemon/.venv/bin/python daemon/clawd_activity.py --install
 >   ```
 >
->   then add `activity = on` to `~/.config/claude-usage-monitor/config`
->   (options in [`daemon/config.example`](daemon/config.example)).
+>   All of it can be turned off in `~/.config/claude-usage-monitor/config`
+>   (`clock`, `activity`, `screen_mode`, `corner_buddy` — see
+>   [`daemon/config.example`](daemon/config.example)).
 > - **Here, too:** upstream's official Clawd animations and corner mascot,
 >   with the fork's features carried over to that engine, plus one more
 >   official animation found by name probing (`Clawd-Book.gif`). Claude Code's
@@ -79,14 +82,15 @@ The device boots into the splash. Tap the screen anywhere to switch to the Usage
 | ![Splash](screenshots/lcd_154/splash.png) | ![Usage](screenshots/lcd_154/usage.png) |
 | Splash: official Clawd on the laptop while Claude Code runs a tool | Usage: corner mascot pointing, footer saying Claude needs your permission |
 
-<sub>Captured from an ESP32-S3-Touch-LCD-1.54 running this branch, with the macOS daemon's `activity = on`.</sub>
+<sub>Captured from an ESP32-S3-Touch-LCD-1.54 running this branch, with the macOS daemon's default settings.</sub>
 
 While the splash is up, the middle (PWR) button cycles animations. **Hold the power button for 3 seconds, then release, to put the device into pairing mode** — this clears the saved Bluetooth bond and re-advertises. The firmware also auto-rotates animations every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
 
 ## What Clawd shows (this fork)
 
-With `activity = on` in the macOS daemon's config, Claude Code's hooks tell
-the device what each session is doing, and Clawd acts it out — on the splash,
+Once the Claude Code hooks are installed (`install-mac.sh` offers them; the
+daemon's `activity = auto` default then switches on), they tell the device
+what each session is doing, and Clawd acts it out — on the splash,
 in the corner of the usage screen (`corner_buddy = on`), and in the footer.
 With several sessions open, the most urgent one wins: limit, then permission,
 then working, then done.
@@ -296,7 +300,7 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Clawdmeter /f
 4. The daemon connects to the ESP32 over BLE and writes a JSON payload to the GATT RX characteristic.
 5. The firmware parses it and updates the LVGL dashboard.
 6. The firmware also tracks the rate of change of session % over a 5-minute window and picks splash animations from the matching mood group.
-   With `activity = on` (macOS daemon, this fork), Claude Code hooks report what each session is doing instead, and the daemon sends that as the animation name — thinking, writing, waiting for your permission, done, out of quota.
+   With the Claude Code hooks installed (macOS daemon, this fork), they report what each session is doing instead, and the daemon sends that as the animation name — thinking, writing, waiting for your permission, done, out of quota.
 7. The two side buttons are independent of all of this — they send Space and Shift+Tab as BLE HID keyboard input to the paired host directly.
 
 ## Physical buttons

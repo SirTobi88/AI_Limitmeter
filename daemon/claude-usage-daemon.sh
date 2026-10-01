@@ -173,7 +173,7 @@ read_chime_setting() {
 }
 
 # Read the `clock` option from the config file. Echoes one of: off|auto|12|24.
-# Defaults to "off" so existing setups keep showing "Usage" until opted in.
+# Defaults to "auto": show the time, 12h/24h detected from the locale.
 read_clock_setting() {
     local val=""
     if [ -f "$CONFIG_FILE" ]; then
@@ -184,7 +184,7 @@ read_clock_setting() {
     fi
     case "$val" in
         off|auto|12|24) echo "$val" ;;
-        *)              echo "off" ;;
+        *)              echo "auto" ;;
     esac
 }
 
