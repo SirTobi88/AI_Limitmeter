@@ -5,6 +5,7 @@
 #include <math.h>
 #include <time.h>
 #include "logo.h"
+#include "clawd_still.h"
 #include "icons.h"
 #include "theme.h"
 #include "hal/board_caps.h"
@@ -298,15 +299,11 @@ static lv_obj_t* lbl_anim;      // status line: connection state + whimsical idl
 // ---- Battery indicator (shared, on top) ----
 static lv_obj_t* battery_img;
 static lv_obj_t* logo_img;
-// Optional: der Buddy klein in der Ecke des Usage-Screens, an Stelle des
-// festen Logos. Der Host schaltet das ueber das Feld "ua" ein, sonst bleibt
-// es beim Logo wie bisher.
-static splash_mini_t* usage_mini = NULL;
+// The corner: upstream's animated mascot on PSRAM boards (static still Clawd
+// in logo_img otherwise). With "ua" on, the host's state plays there in place
+// of the mascot's own usage-rate routine (splash_mascot_set_host_anim).
 static bool usage_creature_on = false;
-// Treibt der Host die Animation? Wenn nicht, folgt die Ecke der Wahl des
-// Geraets -- und zwar fortlaufend, nicht nur wenn gerade ein Paket kommt.
-static bool usage_creature_host_driven = false;
-static char usage_creature_anim[24] = "idle breathe";
+static char usage_creature_anim[24] = "";
 // Was der Host zuletzt als Zustand gemeldet hat ("" = keine Vorgabe). Treibt
 // neben dem Buddy auch die Fusszeile des Usage-Screens.
 static char host_anim[24] = "";
@@ -841,10 +838,10 @@ static void build_idle_group(lv_obj_t* parent) {
     lv_obj_clear_flag(idle_group, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(idle_group, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-    // A shrunk-down sleeping creature (reused claudepix "expression sleep" art)
+    // A shrunk-down resting creature (the official cloud-ride animation)
     // sits between the header and the status line; the animated "Listening…"
     // status line carries the words, so no extra text is needed here.
-    lv_obj_t* creature = splash_mini_create(idle_group, "expression sleep", L.idle_px);
+    lv_obj_t* creature = splash_mini_create(idle_group, "cloud", L.idle_px);
     if (creature) lv_obj_align(creature, LV_ALIGN_CENTER, 0, -20);
 
     lv_obj_add_flag(idle_group, LV_OBJ_FLAG_HIDDEN);  // update_view_state decides
@@ -934,8 +931,11 @@ void ui_init(void) {
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-    if (L.small_icons) init_icon_dsc_rgb565a8(&logo_dsc, LOGO_SMALL_WIDTH, LOGO_SMALL_HEIGHT, logo_small_data);
-    else               init_icon_dsc_rgb565a8(&logo_dsc, LOGO_WIDTH, LOGO_HEIGHT, logo_data);
+#ifndef BOARD_HAS_PSRAM
+    // Static corner mascot (see clawd_still.h) — the animated one needs PSRAM.
+    if (L.small_icons) init_icon_dsc_rgb565a8(&logo_dsc, CLAWD_STILL_SMALL_W, CLAWD_STILL_SMALL_H, clawd_still_small_data);
+    else               init_icon_dsc_rgb565a8(&logo_dsc, CLAWD_STILL_W, CLAWD_STILL_H, clawd_still_data);
+#endif
     init_battery_icons();
 
     init_usage_screen(scr);
@@ -945,20 +945,22 @@ void ui_init(void) {
         attach_touch_actions(splash_get_root());
     }
 
+    // Corner mascot in the old logo slot (none on round panels, which have no
+    // corner). The still Clawd is shorter than the 80/40 px slot the spark
+    // logo used; center it vertically in that slot.
     if (L.show_logo) {
+        const int slot  = L.small_icons ? LOGO_SMALL_HEIGHT : LOGO_HEIGHT;
+        const int art_h = L.small_icons ? CLAWD_STILL_SMALL_H : CLAWD_STILL_H;
+        const int top   = L.logo_y + (slot - art_h) / 2;
+#ifdef BOARD_HAS_PSRAM
+        // Animated: idles, does acts, takes walk-off/lurk trips — or plays
+        // the host's state when the host asks for the corner ("ua").
+        splash_mascot_create(scr, L.margin, top + art_h, L.small_icons ? 2 : 3);
+#else
         logo_img = lv_image_create(scr);
         lv_image_set_src(logo_img, &logo_dsc);
-        lv_obj_set_pos(logo_img, L.margin, L.logo_y);
-    }
-
-    // Genau dorthin, wo das Logo sitzt, und genauso gross - es wird das eine
-    // gegen das andere getauscht, nichts verschiebt sich. NULL ist in Ordnung:
-    // dann bleibt einfach das Logo stehen.
-    usage_mini = splash_mini_new(scr, usage_creature_anim,
-                                 L.small_icons ? LOGO_SMALL_WIDTH : LOGO_WIDTH);
-    if (splash_mini_obj(usage_mini)) {
-        lv_obj_set_pos(splash_mini_obj(usage_mini), L.margin, L.logo_y);
-        lv_obj_add_flag(splash_mini_obj(usage_mini), LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(logo_img, L.margin, top);
+#endif
     }
 
     battery_img = lv_image_create(scr);
@@ -1123,17 +1125,7 @@ void ui_tick_anim(void) {
     }
     if (current_screen != SCREEN_USAGE) return;
     update_view_state();
-    if (view_state == 1) splash_mini_tick();   // animate the sleeping creature on the idle screen
-    else if (view_state == 2 && usage_creature_on) {
-        // Ohne Vorgabe vom Host waehlt der Splash die Animation -- beim
-        // Aufblenden und danach im eigenen Takt. Die Ecke nur beim Eintreffen
-        // eines Pakets nachzuziehen reicht deshalb nicht: dazwischen zeigten
-        // beide verschiedene Tiere. Also bei jedem Tick nachfuehren; ist der
-        // Name unveraendert, tut splash_mini_set_anim() ohnehin nichts.
-        if (!usage_creature_host_driven)
-            splash_mini_set_anim(usage_mini, splash_current_anim_name());
-        splash_mini_tick_one(usage_mini);
-    }
+    if (view_state == 1) splash_mini_tick();   // animate the resting creature on the idle screen
 
     uint32_t now = lv_tick_get();
 
@@ -1209,23 +1201,15 @@ static void apply_battery_visibility(void) {
     else                                  lv_obj_clear_flag(battery_img, LV_OBJ_FLAG_HIDDEN);
 }
 
-// Logo oder Buddy? Der Buddy nur, wenn der Host ihn angefordert hat und der
-// Usage-Screen mit frischen Zahlen zu sehen ist - auf dem Splash zeigt ohnehin
-// die grosse Animation, und auf dem Pair-/Idle-Screen gibt es nichts zu
-// spiegeln.
+// The host's state goes to the corner only when the host asked for it and
+// the usage screen shows live numbers — on the pair / idle screens there is
+// nothing to mirror, so the mascot keeps its own routine there.
 static void apply_corner_creature(void) {
-    lv_obj_t* mini = splash_mini_obj(usage_mini);
-    bool want_mini = usage_creature_on && mini &&
-                     current_screen != SCREEN_SPLASH && view_state == 2;
-    if (mini) {
-        if (want_mini) lv_obj_clear_flag(mini, LV_OBJ_FLAG_HIDDEN);
-        else           lv_obj_add_flag(mini, LV_OBJ_FLAG_HIDDEN);
-    }
+    bool host = usage_creature_on && usage_creature_anim[0] && view_state == 2;
+    splash_mascot_set_host_anim(host ? usage_creature_anim : "");
     if (logo_img) {
-        if (current_screen == SCREEN_SPLASH || want_mini)
-            lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
-        else
-            lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
+        if (current_screen == SCREEN_SPLASH) lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
+        else                                  lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -1281,16 +1265,10 @@ void ui_set_host_anim(const char* name) {
 
 
 void ui_set_corner_anim(const char* name) {
-    // Kein Name heisst nicht "nichts tun". Der Host schickt "" wenn er nichts
-    // zu spiegeln hat -- der Splash nimmt das als "such dir selbst was aus".
-    // Tat die Ecke stattdessen gar nichts, blieb sie fuer immer auf der
-    // Animation stehen, mit der sie gebaut wurde, waehrend der Splash daneben
-    // munter wechselte. Also dieselbe Lesart wie dort.
-    usage_creature_host_driven = (name && name[0]);
-    if (!usage_creature_host_driven) name = splash_current_anim_name();
-    if (!name || !name[0]) return;
-    strlcpy(usage_creature_anim, name, sizeof(usage_creature_anim));
-    splash_mini_set_anim(usage_mini, usage_creature_anim);
+    // "" = the host has nothing to mirror: the mascot goes back to its own
+    // routine (apply_corner_creature passes "" on).
+    strlcpy(usage_creature_anim, name ? name : "", sizeof(usage_creature_anim));
+    apply_corner_creature();
 }
 
 
@@ -1315,6 +1293,7 @@ void ui_show_screen(screen_t screen) {
 
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
+    splash_mascot_set_visible(screen != SCREEN_SPLASH);
     // Erst nach current_screen: apply_corner_creature() liest die Variable,
     // nicht das Argument. Davor entschied es noch nach dem alten Screen und
     // versteckte auf dem Weg zum Usage-Screen beides -- die Ecke blieb leer.

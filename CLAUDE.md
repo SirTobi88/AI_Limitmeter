@@ -206,15 +206,59 @@ The boot screen is `SCREEN_SPLASH` and only advances on a physical button press,
 
 ## Splash animations
 
-13 × 20×20 pixel-art creature animations sourced from
-[claudepix.vercel.app](https://claudepix.vercel.app). Pipeline:
+17 official Anthropic Clawd animations (core poses + persona scenes), archived
+with full provenance in `research/clawd-official/`. Pipeline:
 
 ```bash
-node tools/scrape_claudepix.js  # → tools/claudepix_data/*.json
-node tools/convert_to_c.js      # → firmware/src/splash_animations.h
+node tools/convert_official_clawd.js            # → firmware/src/splash_animations.h
+node tools/convert_official_clawd.js --verify DIR   # + per-animation PNGs for eyeballing
 ```
 
-Each animation has a per-animation 10-color RGB565 palette. Cell values 0..9 index it. Default boot screen.
+Requires ImageMagick; Laptop and Soccer convert from their Lottie exports
+(crisp) rather than GIFs. Frames are bounding-box crops on the official 55×37
+art stage (ox/oy = stage offset — every animation shares one idle-Clawd
+position, so transitions are seamless), one byte per cell into a per-animation
+≤16-color RGB565 palette (index 0 = background, true black), per-frame hold ms
+with duplicates collapsed (~400 KB total). The converter also: detects each
+animation's **loop region** (gait cycles, scene middles; sailing scene's is
+located by cross-matching the standalone sailing-loop asset, which is not
+emitted), synthesizes the **eyes** (transparent holes in the source GIFs) as
+`#141413` ink via border flood-fill, and applies two contrast recolors
+(trumpet notes → ivory, magnifier fedora → gray) via component analysis.
+
+The splash engine (`splash.cpp`) plays intro → loop → outro on a **60×60
+stage** (`SPLASH_GRID`, cell = min(W,H)/60 → 8 px on 480, 6 px on 368, 4 px on
+240): loops hold until released (walk arrival, scene timer, rotation), so
+switches always pass through the shared idle pose. Walkers translate with
+foot-locked per-frame schedules and mirror when heading left. Usage-rate
+groups pick animations by name; the same rate drives the **corner mascot** on
+the usage screen (`splash_mascot_*`, PSRAM boards; C6 falls back to the static
+`clawd_still.h` icon) — idle stills, rate-scaled acts, and walk-off/lurk/
+walk-back trips. Default boot screen.
+
+**Where the animations come from / finding new ones:** all assets are plain
+files under `https://claude.ai/images/clawd/{core,persona}/…` — static assets
+are not Cloudflare-gated, only HTML routes are. The asset server returns a
+real GIF for a valid filename and an HTML catch-all (both HTTP 200) otherwise,
+so **name probing works**: fetch `Clawd-<Name>.gif` and check the magic bytes.
+Seven current animations are referenced by no shipped bundle and were found
+exactly this way (Anthropic stages seasonal drops — Soccer appeared for the
+World Cup). To hunt for new ones: run `research/clawd-official/fetch.sh`
+(extend its probe list), and grep a fresh desktop .deb's `ion-dist/` bundles
+for `/images/` paths (`research/clawd-official/CLAUDE.md` documents the full
+methodology, including the Lottie sources and the assets-proxy).
+
+
+**This fork's additions:** `research/clawd-official/Clawd-Book.gif` ("book",
+found 2026-10-01 by name probing) and the two stills `still` / `cloud still`
+(single-frame, from the PNGs) are converted too. Host state names in the BLE
+`a` field ("work coding", "allow", "done", … — what `daemon/clawd_activity.py`
+and the Windows Session Browser send) map onto official animations through
+`HOST_ALIASES` in `splash.cpp`; idle names hand back to the rate groups. The
+footer in `ui.cpp` matches the raw host names, so it is independent of the art.
+The corner mascot plays the host state in place when `ua` is set
+(`splash_mascot_set_host_anim`). No ImageMagick on this Mac: a PIL stand-in for
+`convert`/`identify` reproduces upstream's header byte-for-byte.
 
 ## User profile / preferences
 

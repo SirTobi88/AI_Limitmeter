@@ -5,13 +5,12 @@
 > the animation engine — is
 > **[Hermann Björgvin's](https://github.com/HermannBjorgvin/Clawdmeter)**
 > project. This branch (`csb-combined`) collects work from three forks of it,
-> plus one addition of its own, so the device shows *what Claude Code is doing*
+> plus additions of its own, so the device shows *what Claude Code is doing*
 > rather than only how fast the quota burns:
 >
 > - **[juppeee's `csb-buddy`](https://github.com/juppeee/Clawdmeter/tree/csb-buddy)**
->   — a payload field (`a`) that lets the host name the animation, and five
->   extra animations (done, think, write, allow, limit), reworked from
->   [claudepix](https://claudepix.vercel.app).
+>   — a payload field (`a`) that lets the host name the animation. (Its five
+>   extra claudepix-based sprites are replaced here by official art, below.)
 > - **[WHerzog-Germany's `csb-buddy`](https://github.com/WHerzog-Germany/Clawdmeter/tree/csb-buddy)**
 >   — BLE fixes (advertising that restarts itself, no owner claimed from a
 >   failed handshake, a per-board name like `Clawdmeter 35F9`), a USB plug-in
@@ -34,9 +33,26 @@
 >
 >   then add `activity = on` to `~/.config/claude-usage-monitor/config`
 >   (options in [`daemon/config.example`](daemon/config.example)).
+> - **Here, too:** upstream's official Clawd animations and corner mascot,
+>   with the fork's features carried over to that engine, plus one more
+>   official animation found by name probing (`Clawd-Book.gif`). Claude Code's
+>   state maps onto official art only:
 >
-> The branch is based on upstream as of July 2026, so it predates upstream's
-> official 60×60 Clawd animations. Tested on a Waveshare ESP32-S3-Touch-LCD-1.54.
+>   | Claude Code is… | Clawd | Footer |
+>   | --- | --- | --- |
+>   | running tools / editing files | laptop | rotating verbs |
+>   | thinking | book | rotating verbs |
+>   | waiting for your permission | pointing | Needs you |
+>   | done | jumping happy | Your turn |
+>   | out of quota | still | Limit reached |
+>   | quiet for 15 min | cloud still | Idle |
+>   | idle | usage-rate picks, as upstream | Idle |
+>
+>   With `corner_buddy = on` the corner mascot plays the same state in place
+>   of its own routine. Also from upstream: the daemon token fixes, the
+>   LCD-4 port and the desktop simulator.
+>
+> Tested on a Waveshare ESP32-S3-Touch-LCD-1.54 and in the simulator.
 > On Windows, the [Claude Session Browser](https://github.com/juppeee/claude-session-browser)
 > sends the same fields; the Linux and Windows daemons only send usage.
 >
@@ -59,7 +75,7 @@ Shift+Tab over BLE HID for Claude Code's voice mode and mode-toggle shortcuts.
 | :-----------------------------------: | :----------------------------------------------: |
 | ![Usage meter](assets/demo.jpeg) | ![Clawd animation screen](assets/demo.gif) |
 
-The Clawd animations come from [claudepix](https://claudepix.vercel.app), [@amaanbuilds](https://x.com/amaanbuilds)'s library of pixel-art Clawd sprites, check it out, it's lovely.
+The Clawd animations are Anthropic's official pixel art — see [Credits](#credits).
 
 ## Screens
 
@@ -342,25 +358,20 @@ Default tint is white (`0xFFFFFF`); Lucide PNGs ship as black-on-transparent and
 
 ## Splash animations
 
-The animations come from [claudepix.vercel.app](https://claudepix.vercel.app),
-a library of Clawd sprites. `tools/scrape_claudepix.js` evaluates the
-site's JavaScript in a Node VM to pull out frame data and palettes, then
-`tools/convert_to_c.js` turns everything into RGB565 C arrays and writes
-`firmware/src/splash_animations.h`.
+Anthropic's official Clawd sprites, archived with provenance notes in
+[`research/clawd-official/`](research/clawd-official/);
+`node tools/convert_official_clawd.js` regenerates
+`firmware/src/splash_animations.h` (needs ImageMagick). The splash plays each
+animation intro → loop → outro on a 60×60 stage, so every switch passes
+through the shared idle pose. See [`tools/README.md`](tools/README.md).
 
-To re-pull (e.g. when the source library updates):
-
-```bash
-node tools/scrape_claudepix.js
-node tools/convert_to_c.js
-pio run -d firmware -t upload
-```
-
-See `tools/README.md` for details.
+The desktop simulator runs the full firmware loop in an SDL2 window
+(`pio run -d firmware -e sim`, then `cd firmware && .pio/build/sim/program`);
+see [`SIM-USAGE.md`](SIM-USAGE.md).
 
 ## Credits
 
-- Pixel-art Clawd animation by [@amaanbuilds](https://x.com/amaanbuilds), sourced from [claudepix.vercel.app](https://claudepix.vercel.app). Frame data and palettes scraped + converted by the tooling in `tools/`.
+- Pixel-art Clawd animations are Anthropic's official mascot art (claude.ai/code, Claude Code desktop), archived and converted by the tooling in `tools/` and `research/clawd-official/`.
 - Lucide icon set ([lucide.dev](https://lucide.dev), MIT) for bluetooth and battery UI glyphs.
 - Anthropic brand fonts (Tiempos Text, Styrene B) — see licensing warning below.
 
