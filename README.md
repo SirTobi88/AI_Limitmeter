@@ -36,17 +36,8 @@
 > - **Here, too:** upstream's official Clawd animations and corner mascot,
 >   with the fork's features carried over to that engine, plus one more
 >   official animation found by name probing (`Clawd-Book.gif`). Claude Code's
->   state maps onto official art only:
->
->   | Claude Code is… | Clawd | Footer |
->   | --- | --- | --- |
->   | running tools / editing files | laptop | rotating verbs |
->   | thinking | book | rotating verbs |
->   | waiting for your permission | pointing | Needs you |
->   | done | jumping happy | Your turn |
->   | out of quota | still | Limit reached |
->   | quiet for 15 min | cloud still | Idle |
->   | idle | usage-rate picks, as upstream | Idle |
+>   state maps onto official art only — see
+>   [What Clawd shows](#what-clawd-shows-this-fork) for which picture means what.
 >
 >   With `corner_buddy = on` the corner mascot plays the same state in place
 >   of its own routine. Also from upstream: the daemon token fixes, the
@@ -89,6 +80,44 @@ The device boots into the splash. Tap the screen anywhere to switch to the Usage
 <sub>Captured from an ESP32-S3-Touch-LCD-1.54 running this branch, with the macOS daemon's `activity = on`.</sub>
 
 While the splash is up, the middle (PWR) button cycles animations. **Hold the power button for 3 seconds, then release, to put the device into pairing mode** — this clears the saved Bluetooth bond and re-advertises. The firmware also auto-rotates animations every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
+
+## What Clawd shows (this fork)
+
+With `activity = on` in the macOS daemon's config, Claude Code's hooks tell
+the device what each session is doing, and Clawd acts it out — on the splash,
+in the corner of the usage screen (`corner_buddy = on`), and in the footer.
+With several sessions open, the most urgent one wins: limit, then permission,
+then working, then done.
+
+| Clawd | State | When | Footer |
+| :---: | --- | --- | --- |
+| <img src="assets/states/laptop.gif" width="150" alt="Clawd typing on a laptop"> | **Working** | Claude runs a tool (Bash, search, …) or edits a file (Edit, Write) | rotating verbs |
+| <img src="assets/states/book.gif" width="150" alt="Clawd reading a book with glasses on"> | **Thinking** | you sent a prompt, or a tool just finished and Claude is deciding what's next | rotating verbs |
+| <img src="assets/states/pointing.gif" width="150" alt="Clawd pointing"> | **Needs you** | Claude is waiting for your permission to run a tool | **Needs you** (amber) |
+| <img src="assets/states/jumping_happy.gif" width="150" alt="Clawd hopping with happy eyes"> | **Your turn** | Claude finished its reply — for 3 minutes, then idle | **Your turn** (green) |
+| <img src="assets/states/still.gif" width="150" alt="Clawd standing still"> | **Out of quota** | the 5-hour or the weekly limit is at 100 % | **Limit reached** (red) |
+| <img src="assets/states/cloud_still.gif" width="150" alt="Clawd resting on a cloud"> | **Sleeping** | no Claude Code activity for 15 minutes | **Idle** (gray) |
+| — | **Idle** | between those, or with `activity = off` | **Idle** / rotating verbs |
+
+While idle, the device picks its own animations by how fast your quota is
+burning, as upstream does: calm ones (magnifier, walking, book, …) when usage
+is flat, busier ones (dancing, skateboard, racing car, …) as it climbs.
+
+Details worth knowing:
+
+- **Display mode** (`screen_mode`): `usage` keeps the numbers up and lets the
+  corner and footer carry the state; `clawd` shows the big animation all the
+  time; `auto` (default) shows the numbers and switches to the big animation
+  for 6.5 s whenever the state changes.
+- Flips between working and thinking are held for at least 4 s so the screen
+  doesn't flicker during a turn; *Needs you*, *Your turn* and *Out of quota*
+  go out at once.
+- A turn interrupted with Esc fires no hook of its own, so a working state
+  falls back to idle after 5 minutes without news.
+- Switches always pass through Clawd's shared idle pose, so the big animation
+  may finish its current move (a second or two) before showing the new state.
+- The Windows [Claude Session Browser](https://github.com/juppeee/claude-session-browser)
+  sends the same state names and gets the same pictures.
 
 ## Hardware
 
