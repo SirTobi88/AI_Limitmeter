@@ -84,7 +84,7 @@ The device boots into the splash. Tap the screen anywhere to switch to the Usage
 | Splash | Usage |
 | :----: | :---: |
 | ![Splash](screenshots/lcd_154/splash.png) | ![Usage](screenshots/lcd_154/usage.png) |
-| Splash: Clawd at work while Claude Code runs a tool | Usage: corner buddy and footer saying Claude needs your permission |
+| Splash: official Clawd on the laptop while Claude Code runs a tool | Usage: corner mascot pointing, footer saying Claude needs your permission |
 
 <sub>Captured from an ESP32-S3-Touch-LCD-1.54 running this branch, with the macOS daemon's `activity = on`.</sub>
 
