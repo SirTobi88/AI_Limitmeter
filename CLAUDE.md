@@ -15,6 +15,9 @@ Seven ports today (two SoC families, five panel sizes, AMOLED + two TFTs, one ro
 - `boards/waveshare_amoled_206/` — Waveshare ESP32-S3-Touch-AMOLED-2.06 (CO5300, 410×502 watch form factor, FT3168 touch, no IO expander, 32 MB flash, PCF85063 RTC, ES8311 codec). Build env: `waveshare_amoled_206`. Display, touch, battery, IMU init, and BLE verified on hardware; the ES8311 chime path is not wired up (`sound.cpp` no-ops).
 - `boards/waveshare_lcd_154/` — Waveshare ESP32-S3-Touch-LCD-1.54 (**ST7789 TFT** over plain 4-wire SPI, 240×240, CST816 touch, no PMU, ES8311 speaker). Build env: `waveshare_lcd_154`. The only non-AMOLED port and the only one below 300 px, which is why `compute_layout()` has a "small" breakpoint.
 - `boards/waveshare_knob_18/` — Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (**round** 360×360 ST77916 TFT over QSPI, CST816 touch, rotary ring, DRV2605 haptics, no PMU). Build env: `waveshare_knob_18`. The only round panel (`BoardCaps.is_round` → ring-gauge layout) and the only board with a rotary ring (`has_encoder`).
+- `boards/waveshare_lcd_4/` — Waveshare ESP32-S3-Touch-LCD-4 (ST7701 RGB parallel, 480×480 square, GT911 touch). Build env: `waveshare_lcd_4`. **RGB-panel port**: Arduino_ESP32RGBPanel + bounce buffers (tearing fix). IO expander @ 0x24 (TCA9554 / CH32V003) must init before `gfx->begin()` or the panel stays dark; backlight is expander pin 2 (on/off only). No AXP2101 / IMU; KEY/PWR is hardware RST. Single BOOT button (GPIO 0 → Space/PTT).
+
+Plus one non-hardware target: `boards/sim/` — **native desktop simulator** (SDL2 window, 480×480, `platform = native`). Build env: `sim`. See "Desktop simulator" below.
 
 **C6 ports have no PSRAM** — shared code gates on `BOARD_HAS_PSRAM` (absent on C6) to use `MALLOC_CAP_INTERNAL` for LVGL/splash buffers, and the `screenshot` serial command is disabled (`LV_USE_SNAPSHOT=0`), so UI changes on a C6 board must be eyeballed on hardware, not auto-captured.
 
@@ -81,6 +84,13 @@ Pins from Waveshare's demo package (`08_LVGL_Test/lcd_config.h`, `04_Encoder_Tes
 - **No reachable keys.** BOOT (GPIO 0) is on the PCB but inside the closed case, and there is no PWR key. `touch_keys` moves their jobs to the screen: **tap** = toggle screens (after a 300 ms double-tap window), **double tap** = Shift+Tab, **hold** = Space while a host is connected (voice-mode PTT), **hold 3–6 s + release while disconnected** = pair. BOOT still works as Space / hold-to-pair with the case open.
 - **No battery gauge**: `BATT_ADC` (GPIO 1) divides the 5 V rail, not the cell. **No chime**: the PCM5100A DAC only has a line-out on the connector and its XSMT mute is driven by the second MCU.
 
+### LCD-4 — `waveshare_lcd_4`
+- Display: **ST7701** 480×480 RGB parallel (DE=40, VSYNC=39, HSYNC=38, PCLK=41, R0-4=46/3/8/18/17, G0-5=14/13/12/11/10/9, B0-4=5/45/48/47/21); ST7701 init via SW SPI (CS=42, SCK=2, MOSI=1).
+- Touch: **GT911** via I2C (SDA=15, SCL=7), polled (wiki INT=GPIO 16 unused). Probe 0x5D then 0x14.
+- IO expander: **addr 0x24** (fallback 0x20) on the same I2C bus — must init before `gfx->begin()` (output 0xFF, config 0x3A). Backlight is expander pin 2.
+- No PMU / IMU. Buttons: GPIO 0 only (BOOT → Space/PTT). KEY/PWR is EN/RST (hardware reset). GPIO 18 is display R3.
+- RGB tearing fix: pass `bounce_buffer_size_px = LCD_WIDTH * 10` to `Arduino_ESP32RGBPanel`. Do not call `rgbpanel->getFrameBuffer()` after `gfx->begin()`.
+
 ## Architecture
 
 ```text
@@ -129,6 +139,7 @@ pio run -d firmware -e waveshare_amoled_18_c6                                   
 pio run -d firmware -e waveshare_amoled_206                                     # build 2.06 (S3, watch)
 pio run -d firmware -e waveshare_lcd_154                                        # build LCD-1.54 (S3, TFT)
 pio run -d firmware -e waveshare_knob_18                                        # build Knob-1.8 (S3, round TFT)
+pio run -d firmware -e waveshare_lcd_4                                           # build LCD-4 (S3, RGB TFT)
 pio run -d firmware -e waveshare_amoled_18 -t upload --upload-port /dev/cu.usbmodem101   # flash 1.8 on macOS
 pio run -d firmware -e waveshare_amoled_216 -t upload --upload-port /dev/ttyACM0         # flash 2.16 on Linux
 # C6 boards: same native USB-JTAG flashing; flag a chip mismatch ("This chip is ESP32-C6,
@@ -138,6 +149,35 @@ pio run -d firmware -e waveshare_amoled_216 -t upload --upload-port /dev/ttyACM0
 If `pio` isn't on PATH: try `~/.platformio/penv/bin/pio` (Linux/macOS pio install) or `brew install platformio` on macOS.
 
 Device path differs by OS: `/dev/cu.usbmodem*` on macOS, `/dev/ttyACM0` on Linux. Both expose the ESP32-S3 native USB-JTAG (no boot-mode dance needed).
+
+## Desktop simulator (`-e sim`) — develop UI without hardware
+
+```bash
+sudo apt install libsdl2-dev   # once (macOS: brew install sdl2)
+pio run -d firmware -e sim && (cd firmware && .pio/build/sim/program)
+```
+
+An SDL2 window stands in for the 480×480 panel; the **full firmware loop runs
+unmodified** — `main.cpp`, `ui.cpp`, `splash.cpp`, idle fade, pair gesture,
+JSON parsing, usage-rate/chime logic. Only `ble.cpp`/`chime.cpp` are swapped
+for stubs. How it works: `boards/sim/` implements the HAL against SDL2, thin
+Arduino shims live in `boards/sim/shim/` (`millis`/`Serial`→stdio,
+`heap_caps`→malloc, in-memory `Preferences`), and `ble_sim.cpp` plays back
+daemon payloads from `firmware/sim/scenario.jsonl` (one JSON line per state +
+optional `name`/`hold_ms`; override with `SIM_SCENARIO=<path>`).
+
+Controls (full map in `boards/sim/board.h`): mouse = touch · space =
+play/pause scenario · ←/→ = step · 1-9 = jump · d = BLE link toggle ·
+b/n = BOOT/secondary buttons · p = PWR · c/-/= = charging/battery ·
+s = screenshot BMP · esc = quit.
+
+Headless screenshots (works in CI, no display):
+`SDL_VIDEODRIVER=dummy SIM_AUTOSHOT_MS=6000 .pio/build/sim/program` saves
+`sim-autoshot.bmp` (or `SIM_AUTOSHOT_PATH`) after 6 s and exits. Combine with
+the boot-screen swap trick below to capture any screen. **The sim renders with
+desktop LVGL and fake data — always do a final check on real hardware before
+merging panel-related changes** (col offsets, rotation, rounding live in the
+hardware boards, not shared code).
 
 ## QA your own UI changes — don't ask the user
 
@@ -157,6 +197,8 @@ The boot screen is `SCREEN_SPLASH` and only advances on a physical button press,
 8. **LVGL RGB565A8 is planar.** `w*h` RGB565 pixels followed by `w*h` alpha bytes; `data_size = w*h*3`, `stride = w*2`. Use `init_icon_dsc_rgb565a8()` for icons that overlap non-uniform backgrounds (e.g. battery over splash). Lucide source PNGs are black-on-transparent — converter must tint to white or icons render invisible. See `tools/png_to_lvgl.js`.
 9. **Per-board pre-init is `board_init()`.** Each board's `board_init.cpp` brings up `Wire` and any reset-gating IO expander BEFORE `display_hal_init()`. Skipping the IO expander release on AMOLED-1.8 leaves SH8601 + FT3168 in reset and they silently fail to probe.
 10. **No `#ifdef BOARD_*` in shared code.** The whole point of the refactor — if you're about to add one, you probably want a `BoardCaps` field or a per-board file instead. See `docs/porting/capability-flags.md`.
+11. **LCD-4 RGB bounce buffers.** `Arduino_RGB_Display` DMA-scans PSRAM. Pass `bounce_buffer_size_px = LCD_WIDTH * 10` so ESP-IDF allocates SRAM bounce buffers. Do not call `rgbpanel->getFrameBuffer()` after `gfx->begin()` — it constructs a second RGB panel and crashes.
+12. **LCD-4 has only one user button (GPIO 0 / BOOT).** GPIO 18 is display R3. KEY/PWR is EN/RST (hardware reset). Hold-to-pair and PWR-short animation/brightness cycling are unavailable; tap the panel to toggle splash ↔ usage.
 
 ## Icons
 
