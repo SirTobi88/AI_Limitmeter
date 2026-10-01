@@ -117,3 +117,63 @@ def test_payload_fields_follow_config(tmp_path, monkeypatch):
 
     p = {"s": 100, "w": 5}
     assert mod.add_activity_fields(p) == "limit"
+
+
+def test_mode_change_is_sent_between_polls(tmp_path, monkeypatch):
+    """screen_mode edited in the config reaches the device within a tick, not
+    at the next poll; the usage numbers are the last reading's."""
+    import asyncio
+
+    cfg = tmp_path / "config"
+    cfg.write_text("activity = on\nscreen_mode = auto\n")
+    monkeypatch.setattr(mod, "CONFIG_FILE", cfg)
+    monkeypatch.setattr(mod, "POLL_INTERVAL", 3600)
+    monkeypatch.setattr(mod, "ACTIVITY_TICK", 0.01)
+    monkeypatch.setattr(mod.clawd_activity, "current_anim", lambda limit_hit=False: "done")
+
+    polls = []
+
+    async def fake_poll():
+        polls.append(1)
+        return {"s": 10, "w": 5, "ok": True}
+
+    monkeypatch.setattr(mod, "poll_active_payload", fake_poll)
+
+    class FakeClient:
+        is_connected = True
+
+        def __init__(self, _target):
+            pass
+
+        async def connect(self):
+            pass
+
+        async def disconnect(self):
+            pass
+
+        async def start_notify(self, *_a):
+            pass
+
+        async def write_gatt_char(self, _uuid, data, response=False):
+            writes.append(json.loads(data))
+
+    writes = []
+    monkeypatch.setattr(mod, "BleakClient", FakeClient)
+
+    async def scenario():
+        stop = asyncio.Event()
+        task = asyncio.create_task(mod.connect_and_run("AA:BB", stop))
+        await asyncio.sleep(0.05)
+        assert [w["sm"] for w in writes] == [2]
+        cfg.write_text("activity = on\nscreen_mode = usage\ncorner_buddy = off\n")
+        await asyncio.sleep(0.05)
+        cfg.write_text("activity = off\n")
+        await asyncio.sleep(0.05)
+        stop.set()
+        await task
+
+    asyncio.run(scenario())
+    assert len(polls) == 1
+    assert writes[1]["sm"] == 0 and writes[1]["ua"] is False and writes[1]["s"] == 10
+    assert "a" not in writes[2] and "sm" not in writes[2]   # opted out -> device decides
+    assert len(writes) == 3

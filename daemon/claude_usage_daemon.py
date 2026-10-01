@@ -363,6 +363,12 @@ def read_activity_settings() -> dict:
 
 
 _SCREEN_MODES = {"usage": 0, "clawd": 1, "auto": 2}
+
+
+def _activity_key(payload: dict) -> tuple:
+    """What the device sees of the buddy settings; a change in any of them is
+    worth a write between polls."""
+    return payload.get("a"), payload.get("sm"), payload.get("ua")
 _WORK_ANIMS = {"work think", "work coding", "write"}
 WORK_ANIM_HOLD_S = 4
 
@@ -764,6 +770,7 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
     used_successfully = False
     last_payload: dict | None = None
     last_anim: str | None = None
+    last_key: tuple = (None, None, None)
     last_anim_sent = 0.0
     try:
         while client.is_connected and not stop_event.is_set():
@@ -776,14 +783,16 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                     log("No usable config dir this cycle")
                 else:
                     last_anim = add_activity_fields(payload)
+                    last_key = _activity_key(payload)
                     if await session.write_payload(payload):
                         last_poll = last_anim_sent = time.time()
                         last_payload = payload
                         used_successfully = True
             elif last_payload is not None:
-                # Between polls, push a changed Claude Code state right away
-                # by resending the last reading with the new animation, so the
-                # buddy reacts within a second instead of at the next poll.
+                # Between polls, push a changed Claude Code state -- or a
+                # changed screen_mode / corner_buddy in the config -- right
+                # away by resending the last reading with the new fields, so
+                # the device reacts within a second instead of at the next poll.
                 payload = dict(last_payload)
                 anim = add_activity_fields(payload)
                 # Within a turn Claude flips between thinking and tool calls
@@ -792,12 +801,16 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                 # out at once.
                 churn = (anim in _WORK_ANIMS and last_anim in _WORK_ANIMS
                          and now - last_anim_sent < WORK_ANIM_HOLD_S)
-                if anim != last_anim and not churn:
+                key = _activity_key(payload)
+                mode_changed = key[1:] != last_key[1:]
+                if mode_changed or (anim != last_anim and not churn):
                     add_clock_fields(payload)
                     if await session.write_payload(payload):
                         last_payload = payload
-                        last_anim = anim
-                        last_anim_sent = now
+                        last_key = key
+                        if anim != last_anim:
+                            last_anim = anim
+                            last_anim_sent = now
 
             # Activity on: tick fast so state changes reach the device quickly.
             tick = ACTIVITY_TICK if last_anim is not None else TICK

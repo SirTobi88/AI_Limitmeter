@@ -49,6 +49,8 @@ clock = off
 #   off = the device picks its own animations by usage rate (default)
 #   on  = the device mirrors Claude Code's state
 # activity = on
+# activity, screen_mode and corner_buddy take effect within a second, not at
+# the next poll.
 # What the device shows while activity is on:
 #   usage = the numbers; the corner buddy and footer still follow Claude
 #   clawd = the big animation all the time
