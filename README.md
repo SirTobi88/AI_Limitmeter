@@ -15,14 +15,18 @@
 > - **[WHerzog-Germany's `csb-buddy`](https://github.com/WHerzog-Germany/Clawdmeter/tree/csb-buddy)**
 >   — BLE fixes (advertising that restarts itself, no owner claimed from a
 >   failed handshake, a per-board name like `Clawdmeter 35F9`), a USB plug-in
->   animation, the Waveshare Knob-1.8 port with a round layout, LCD-1.54 fixes,
->   and a daemon that reports a used-up limit instead of going quiet.
+>   animation, the Waveshare Knob-1.8 port with a round layout, and a daemon
+>   that reports a used-up limit instead of going quiet. On the LCD-1.54 the
+>   picture is turned a quarter turn left (the board stands on its long edge),
+>   the key labelled PWR now has the PWR role (GPIO 5), and the battery icon
+>   shows charging.
 > - **[ryanmaule's `csb-buddy`](https://github.com/ryanmaule/Clawdmeter/tree/csb-buddy)**
 >   — three display modes (usage, Clawd, or Clawd for a few seconds on each
 >   state change), an animated corner buddy, and a footer that says
 >   `Needs you`, `Your turn`, `Limit reached` or `Idle`.
 > - **Here:** the macOS daemon drives all of that itself from Claude Code
->   hooks — no Session Browser needed. Install the hooks once and opt in:
+>   hooks — no Session Browser needed. After `./install-mac.sh`, install the
+>   hooks once and opt in:
 >
 >   ```bash
 >   daemon/.venv/bin/python daemon/clawd_activity.py --install
@@ -33,6 +37,8 @@
 >
 > The branch is based on upstream as of July 2026, so it predates upstream's
 > official 60×60 Clawd animations. Tested on a Waveshare ESP32-S3-Touch-LCD-1.54.
+> On Windows, the [Claude Session Browser](https://github.com/juppeee/claude-session-browser)
+> sends the same fields; the Linux and Windows daemons only send usage.
 >
 > No licence, here or upstream. Hermann explains why in
 > [his README](https://github.com/HermannBjorgvin/Clawdmeter#licensing-gray-area-warning).
@@ -76,6 +82,7 @@ Boards supported out of the box:
 - [Waveshare ESP32-C6-Touch-AMOLED-1.8](https://www.waveshare.com/esp32-c6-touch-amoled-1.8.htm?&aff_id=149786)
 - [Waveshare ESP32-S3-Touch-AMOLED-2.06](https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm?&aff_id=149786)
 - [Waveshare ESP32-S3-Touch-LCD-1.54](https://www.waveshare.com/esp32-s3-lcd-1.54.htm?sku=33869) (240x240 SPI TFT, not AMOLED)
+- [Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/esp32-s3-knob-touch-lcd-1.8.htm) (round, rotary ring; this fork only)
 
 > Please check if a pull request exists for your alternative hardware port before opening a new one, providing QA feedback and testing on the same hardware is more valuable than duplicate pull requests.
 
@@ -105,7 +112,7 @@ The board env name is required. Run `./flash-mac.sh` with no args to see the ava
 
 ### Pair the device
 
-After flashing, open **System Settings → Bluetooth** and click *Connect* next to "Clawdmeter". The daemon only ever connects to the peripheral this Mac is paired/connected to — it never scans for a nearby device — so once it's connected here the daemon picks it up on its next poll (~60 s).
+After flashing, open **System Settings → Bluetooth** and click *Connect* next to "Clawdmeter XXXX" (every board appends the last four hex digits of its Bluetooth address). The daemon only ever connects to the peripheral this Mac is paired/connected to — it never scans for a nearby device — so once it's connected here the daemon picks it up on its next poll (~60 s).
 
 ### Install the daemon
 
@@ -139,13 +146,13 @@ The board env name is required. Run `./flash.sh` with no args to see the availab
 
 ### Pair the device
 
-After flashing, the device advertises as "Clawdmeter". Pair it once:
+After flashing, the device advertises as "Clawdmeter XXXX" (the last four hex digits of its Bluetooth address). Pair it once:
 
 ```bash
 # Scan for the device
 bluetoothctl scan le
 
-# When "Clawdmeter" appears, pair and trust it
+# When "Clawdmeter XXXX" appears, pair and trust it
 bluetoothctl pair F4:12:FA:C0:8F:E5    # use your device's MAC
 bluetoothctl trust F4:12:FA:C0:8F:E5
 ```
@@ -186,7 +193,7 @@ Run `pio run -d firmware` with no env to see the available board envs.
 
 ### Pair the device
 
-The device is a bonded BLE HID keyboard, so pair it once: **Settings → Bluetooth & devices → Add device → Bluetooth**, then select "Clawdmeter". Pairing is **required** — it enables the physical buttons and keeps a persistent connection (the device keeps showing your last-synced usage even after the daemon quits). To undo, use **Remove device** (this disables the buttons).
+The device is a bonded BLE HID keyboard, so pair it once: **Settings → Bluetooth & devices → Add device → Bluetooth**, then select "Clawdmeter XXXX". Pairing is **required** — it enables the physical buttons and keeps a persistent connection (the device keeps showing your last-synced usage even after the daemon quits). To undo, use **Remove device** (this disables the buttons).
 
 ### Install the daemon (recommended)
 
@@ -237,6 +244,7 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Clawdmeter /f
 4. The daemon connects to the ESP32 over BLE and writes a JSON payload to the GATT RX characteristic.
 5. The firmware parses it and updates the LVGL dashboard.
 6. The firmware also tracks the rate of change of session % over a 5-minute window and picks splash animations from the matching mood group.
+   With `activity = on` (macOS daemon, this fork), Claude Code hooks report what each session is doing instead, and the daemon sends that as the animation name — thinking, writing, waiting for your permission, done, out of quota.
 7. The two side buttons are independent of all of this — they send Space and Shift+Tab as BLE HID keyboard input to the paired host directly.
 
 ## Physical buttons
@@ -269,6 +277,16 @@ JSON payload format (written to RX):
 ```
 
 Fields: `s` = session %, `sr` = session reset (minutes), `w` = weekly %, `wr` = weekly reset (minutes), `st` = status, `ok` = success flag.
+
+Optional fields (all may be omitted):
+
+| Field | Meaning |
+| ----- | ------- |
+| `c`  | `1` = play the chime when the session limit resets |
+| `t`, `tf` | local wall-clock epoch and hour format (12/24) for the clock |
+| `a`  | animation name to play, e.g. `"work coding"`, `"allow"`, `"done"`, `"limit"` (this fork; `""` = device picks by usage rate) |
+| `sm` | display mode: `0` usage, `1` Clawd, `2` Clawd briefly on each state change (this fork) |
+| `ua` | `true` = animate the buddy in the usage screen's corner (this fork) |
 
 ## Recompiling fonts
 
