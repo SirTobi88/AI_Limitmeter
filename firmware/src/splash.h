@@ -59,8 +59,10 @@ void splash_mini_tick(void);
 
 // Corner mascot (usage screen, PSRAM boards): the still Clawd idles in the
 // logo slot, does occasional acts, and takes walk-off/lurk/walk-back trips.
-// feet_y = px of the art's ground line; cell = px per art cell in the corner.
-lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cell);
+// feet_y = px of the art's ground line; cell = px per art cell in the corner;
+// max_w = px a host state may take to the right of slot_x before it would
+// run into the title (0 = no limit) — wider states drop to a smaller cell.
+lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cell, int max_w);
 void splash_mascot_tick(void);
 void splash_mascot_set_visible(bool v);
 

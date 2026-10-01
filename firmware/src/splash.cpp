@@ -492,6 +492,7 @@ static lv_image_dsc_t mas_dsc, mas_lurk_dsc;
 static int  mas_cell = 3;
 static int  mas_slot_x = 0;            // px of the slot (walk-in target)
 static int  mas_feet_y = 0;            // px feet line (all art is bottom-anchored)
+static int  mas_max_w = 0;             // px a host state may span (0 = no limit)
 static int  mas_lurk_cell = 8;
 static int  mas_screen_w = 480;
 static bool mas_visible = false;
@@ -561,11 +562,13 @@ static void mas_render(const splash_anim_def_t *a, uint16_t frame, bool mirror,
     lv_obj_invalidate(img);
 }
 
-// Corner cell for `a`: the mascot's cell, shrunk until the art fits between
-// the feet line and the top of the screen (the tall hops would poke out).
+// Corner cell for a host state: the mascot's cell, shrunk until the art fits
+// between the feet line and the top of the screen (the tall hops would poke
+// out) and, since a host state can sit there for minutes, left of the title.
 static int mas_cell_for(const splash_anim_def_t *a) {
     int c = mas_cell;
     while (c > 1 && a->h * c > mas_feet_y) c--;
+    while (c > 1 && mas_max_w > 0 && a->w * c > mas_max_w) c--;
     return c;
 }
 
@@ -605,8 +608,9 @@ static void mas_show_still(void) {
                    mas_cell, mas_x, mas_feet_y);
 }
 
-lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cell) {
+lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cell, int max_w) {
     mas_cell = cell;
+    mas_max_w = max_w;
     mas_slot_x = slot_x;
     mas_feet_y = feet_y;
     mas_screen_w = board_caps().width;

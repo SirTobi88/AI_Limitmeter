@@ -165,8 +165,8 @@ static void compute_layout(const BoardCaps& c) {
         // the corner logo/battery switch to the 40px/24px small assets.
         L.margin = 8;
         L.title_y = 4;
-        L.content_y = 44;
-        L.usage_panel_h = 74;
+        L.content_y = 52;        // header tall enough for the 72x48 corner Clawd
+        L.usage_panel_h = 70;    // ...paid for by the two panels, 4 px each
         L.usage_panel_gap = 6;
         L.usage_bar_y = 30;
         L.usage_reset_y = 46;
@@ -954,8 +954,18 @@ void ui_init(void) {
         const int top   = L.logo_y + (slot - art_h) / 2;
 #ifdef BOARD_HAS_PSRAM
         // Animated: idles, does acts, takes walk-off/lurk trips — or plays
-        // the host's state when the host asks for the corner ("ua").
-        splash_mascot_create(scr, L.margin, top + art_h, L.small_icons ? 2 : 3);
+        // the host's state when the host asks for the corner ("ua"). Cell 3
+        // everywhere; on the small layout he stands right on top of the
+        // panels, which is what the taller small header is for.
+        const int feet = L.small_icons ? L.content_y - 2 : top + art_h;
+        // Room left of the title, measured on the widest thing it shows (the
+        // clock), so a host state never runs into it. The advance widths
+        // include the glyphs' side bearings, which already leave a visible gap.
+        int title_w = 0;
+        for (const char* p = "00:00"; *p; p++)
+            title_w += lv_font_get_glyph_width(L.title_font, (uint32_t)p[0], (uint32_t)p[1]);
+        const int title_left = (L.scr_w - title_w) / 2 + L.title_nudge;
+        splash_mascot_create(scr, L.margin, feet, 3, title_left - L.margin);
 #else
         logo_img = lv_image_create(scr);
         lv_image_set_src(logo_img, &logo_dsc);
