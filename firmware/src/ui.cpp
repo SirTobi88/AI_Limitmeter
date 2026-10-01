@@ -298,6 +298,28 @@ static lv_obj_t* lbl_anim;      // status line: connection state + whimsical idl
 // ---- Battery indicator (shared, on top) ----
 static lv_obj_t* battery_img;
 static lv_obj_t* logo_img;
+// Optional: der Buddy klein in der Ecke des Usage-Screens, an Stelle des
+// festen Logos. Der Host schaltet das ueber das Feld "ua" ein, sonst bleibt
+// es beim Logo wie bisher.
+static splash_mini_t* usage_mini = NULL;
+static bool usage_creature_on = false;
+// Treibt der Host die Animation? Wenn nicht, folgt die Ecke der Wahl des
+// Geraets -- und zwar fortlaufend, nicht nur wenn gerade ein Paket kommt.
+static bool usage_creature_host_driven = false;
+static char usage_creature_anim[24] = "idle breathe";
+// Was der Host zuletzt als Zustand gemeldet hat ("" = keine Vorgabe). Treibt
+// neben dem Buddy auch die Fusszeile des Usage-Screens.
+static char host_anim[24] = "";
+// Anzeigemodus: 0 = immer Usage, 1 = immer Buddy, 2 = bei Aktivitaet kurz den
+// Buddy zeigen. Voreinstellung ist das bisherige Verhalten.
+static int  screen_mode = SCREEN_MODE_USAGE;
+static uint32_t auto_splash_until = 0;   // 0 = kein automatischer Rueckweg offen
+static uint32_t auto_splash_started = 0;  // nur fuers Protokoll: wie lange stand er wirklich
+// Sechseinhalb statt fuenf Sekunden: die ersten ein bis zwei davon gehen fuer
+// den Neuaufbau des Splash drauf (LVGL malt in Streifen), sichtbar animiert
+// wird also deutlich kuerzer als die Frist laeuft. Gemessen: 5003 ms Standzeit
+// fuehlten sich wie drei an.
+#define AUTO_SPLASH_MS 6500
 static lv_image_dsc_t battery_dscs[5];  // empty, low, medium, full, charging
 
 // ---- Live-data freshness → which usage sub-view to show ----
@@ -390,6 +412,7 @@ static void format_reset_time(int mins, char* buf, size_t len) {
 
 // Forward decls — callbacks defined near ui_show_screen below
 static void global_click_cb(lv_event_t* e);
+static void apply_corner_creature(void);
 
 // ---- Touch as keys (BoardCaps.touch_keys) ----
 // Boards whose keys can't be reached map them onto the screen:
@@ -927,6 +950,16 @@ void ui_init(void) {
         lv_obj_set_pos(logo_img, L.margin, L.logo_y);
     }
 
+    // Genau dorthin, wo das Logo sitzt, und genauso gross - es wird das eine
+    // gegen das andere getauscht, nichts verschiebt sich. NULL ist in Ordnung:
+    // dann bleibt einfach das Logo stehen.
+    usage_mini = splash_mini_new(scr, usage_creature_anim,
+                                 L.small_icons ? LOGO_SMALL_WIDTH : LOGO_WIDTH);
+    if (splash_mini_obj(usage_mini)) {
+        lv_obj_set_pos(splash_mini_obj(usage_mini), L.margin, L.logo_y);
+        lv_obj_add_flag(splash_mini_obj(usage_mini), LV_OBJ_FLAG_HIDDEN);
+    }
+
     battery_img = lv_image_create(scr);
     lv_image_set_src(battery_img, &battery_dscs[0]);
     lv_obj_set_pos(battery_img, L.scr_w - L.batt_w - L.margin, L.batt_y);
@@ -953,6 +986,12 @@ void ui_update(const UsageData* data) {
     if (data->clock_epoch > 0) {    // daemon supplied wall-clock time → drive the title clock
         clock_base_epoch = data->clock_epoch;
         clock_base_ms = last_data_ms;
+        // Die Uhr wird nur beim Minutenwechsel neu geschrieben. Wechselt das
+        // Format, wuerde die Umstellung sonst bis zu eine Minute lang nicht zu
+        // sehen sein -- der Schalter im Programm sieht dann kaputt aus. Also
+        // den gemerkten Minutenwert verwerfen, damit der naechste Durchlauf
+        // sofort neu schreibt.
+        if (clock_fmt != data->clock_fmt) clock_last_min = -1;
         clock_fmt = data->clock_fmt;
     } else if (clock_base_epoch != 0) {   // clock turned off daemon-side → revert title to "Usage"
         clock_base_epoch = 0;
@@ -1046,12 +1085,52 @@ static void update_view_state(void) {
     lv_obj_add_flag(usage_group, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(v == 0 ? pair_group : v == 1 ? idle_group : usage_group,
                       LV_OBJ_FLAG_HIDDEN);
+    // Der Eckbuddy haengt am view_state, nicht nur am Screen.
+    apply_corner_creature();
+}
+
+// Fusszeile fuer den vom Host gemeldeten Zustand. NULL heisst "nichts zu
+// sagen" -- dann laeuft die Wortliste weiter. Arbeitszustaende geben bewusst
+// NULL zurueck: genau dort gehoert die Wortliste hin.
+static const char* footer_for_host_anim(lv_color_t* col) {
+    if (!host_anim[0]) return NULL;
+    // Die Farbe sagt schon aus zwei Metern, ob etwas ansteht: Bernstein
+    // heisst "der Rechner wartet auf dich", Gruen "Claude ist fertig", Rot
+    // "Limit". Grau tritt zurueck, wenn ohnehin nichts passiert.
+    if (strcmp(host_anim, "allow") == 0) { *col = COL_AMBER; return "Needs you"; }
+    if (strcmp(host_anim, "done") == 0)  { *col = COL_GREEN; return "Your turn"; }
+    if (strcmp(host_anim, "limit") == 0) { *col = COL_RED;   return "Limit reached"; }
+    if (strcmp(host_anim, "idle breathe") == 0 ||
+        strcmp(host_anim, "idle blink") == 0 ||
+        strcmp(host_anim, "idle look around") == 0 ||
+        strcmp(host_anim, "expression sleep") == 0) { *col = COL_DIM; return "Idle"; }
+    return NULL;                       // Arbeit, Tanz, Zwinkern: Wortliste
 }
 
 void ui_tick_anim(void) {
+    // Vor dem Ausstieg unten: waehrend der Splash laeuft, kommt der Rest der
+    // Funktion nicht mehr dran -- der Rueckweg muss also hier stehen.
+    if (auto_splash_until && (int32_t)(millis() - auto_splash_until) >= 0) {
+        auto_splash_until = 0;
+        if (current_screen == SCREEN_SPLASH) {
+            Serial.printf("auto splash: %lu ms sichtbar\n",
+                          (unsigned long)(millis() - auto_splash_started));
+            ui_show_screen(SCREEN_USAGE);
+        }
+    }
     if (current_screen != SCREEN_USAGE) return;
     update_view_state();
     if (view_state == 1) splash_mini_tick();   // animate the sleeping creature on the idle screen
+    else if (view_state == 2 && usage_creature_on) {
+        // Ohne Vorgabe vom Host waehlt der Splash die Animation -- beim
+        // Aufblenden und danach im eigenen Takt. Die Ecke nur beim Eintreffen
+        // eines Pakets nachzuziehen reicht deshalb nicht: dazwischen zeigten
+        // beide verschiedene Tiere. Also bei jedem Tick nachfuehren; ist der
+        // Name unveraendert, tut splash_mini_set_anim() ohnehin nichts.
+        if (!usage_creature_host_driven)
+            splash_mini_set_anim(usage_mini, splash_current_anim_name());
+        splash_mini_tick_one(usage_mini);
+    }
 
     uint32_t now = lv_tick_get();
 
@@ -1089,14 +1168,27 @@ void ui_tick_anim(void) {
 
     // Status text by priority. Whimsical messages only when connected & settled.
     const char* text;
+    // Voreinstellung wie bisher; die Zweige unten faerben um, wo es etwas zu
+    // sagen gibt. Ohne Verbindung und ohne Daten tritt die Zeile zurueck --
+    // sie meldet dann nichts ueber Claude, sondern ueber sich selbst.
+    lv_color_t col = COL_ACCENT;
     if (!s_ble_connected) {
         text = "Waiting";              // advertising / waiting for a host connection
+        col = COL_DIM;
     } else if (view_state == 1) {      // idle — alternate so it reads as alive AND data-less
         text = (anim_msg_idx & 1) ? "No data" : "Listening";
+        col = COL_DIM;
     } else if (now - connected_at_ms < 5000) {
         text = "Connected";
+        col = COL_GREEN;
     } else {
-        text = anim_messages[anim_msg_idx];
+        // Die Wortliste gehoert zur Arbeit. Sie lief bisher immer, auch wenn
+        // Claude seit einer Stunde nichts tat -- huebsch, aber ohne Aussage.
+        // Meldet der Host einen Zustand, der gerade *nicht* Arbeit ist, sagt
+        // die Zeile lieber, worauf es ankommt. Ohne Vorgabe bleibt alles wie
+        // gehabt.
+        const char* state_text = footer_for_host_anim(&col);
+        text = state_text ? state_text : anim_messages[anim_msg_idx];
     }
 
     // All states share the whimsical style: "<glyph> <Title-case word>…"
@@ -1104,6 +1196,7 @@ void ui_tick_anim(void) {
     snprintf(buf, sizeof(buf), "%s %s\xE2\x80\xA6",
              spinner_frames[anim_spinner_idx], text);
     lv_label_set_text(lbl_anim, buf);
+    lv_obj_set_style_text_color(lbl_anim, col, 0);
 }
 
 static screen_t prev_non_splash_screen = SCREEN_USAGE;
@@ -1113,8 +1206,96 @@ static void apply_battery_visibility(void) {
     else                                  lv_obj_clear_flag(battery_img, LV_OBJ_FLAG_HIDDEN);
 }
 
+// Logo oder Buddy? Der Buddy nur, wenn der Host ihn angefordert hat und der
+// Usage-Screen mit frischen Zahlen zu sehen ist - auf dem Splash zeigt ohnehin
+// die grosse Animation, und auf dem Pair-/Idle-Screen gibt es nichts zu
+// spiegeln.
+static void apply_corner_creature(void) {
+    lv_obj_t* mini = splash_mini_obj(usage_mini);
+    bool want_mini = usage_creature_on && mini &&
+                     current_screen != SCREEN_SPLASH && view_state == 2;
+    if (mini) {
+        if (want_mini) lv_obj_clear_flag(mini, LV_OBJ_FLAG_HIDDEN);
+        else           lv_obj_add_flag(mini, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (logo_img) {
+        if (current_screen == SCREEN_SPLASH || want_mini)
+            lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+void ui_set_corner_creature(bool on) {
+    if (on == usage_creature_on) return;
+    usage_creature_on = on;
+    apply_corner_creature();
+}
+
+
+void ui_set_screen_mode(int mode) {
+    if (mode < SCREEN_MODE_USAGE || mode > SCREEN_MODE_AUTO) mode = SCREEN_MODE_USAGE;
+    if (mode == screen_mode) return;
+    screen_mode = mode;
+    auto_splash_until = 0;
+    // Nur beim Wechsel durchgreifen. Danach bleibt das Antippen frei: der
+    // Modus soll die Anzeige einrichten, nicht mit dem Finger streiten.
+    if (mode == SCREEN_MODE_BUDDY)      ui_show_screen(SCREEN_SPLASH);
+    else                                ui_show_screen(SCREEN_USAGE);
+}
+
+
+void ui_set_host_anim(const char* name) {
+    // Zwinkern und Erschrecken sind Momente, keine Zustaende: sie blitzen
+    // ein paar Sekunden auf und sagen nichts darueber aus, ob Claude
+    // arbeitet oder wartet. Der Buddy zeigt sie (der laeuft ueber
+    // ui_set_corner_anim), die Fusszeile laesst sie durch -- sonst stuende
+    // waehrend eines Zwinkerns "Accomplishing..." da, obwohl gerade nichts
+    // passiert, oder "Idle", obwohl Claude laeuft.
+    if (name && (strcmp(name, "expression wink") == 0 ||
+                 strcmp(name, "expression surprise") == 0)) return;
+    bool changed = name && name[0] && strcmp(name, host_anim) != 0;
+    if (name && name[0]) strlcpy(host_anim, name, sizeof(host_anim));
+    else                 host_anim[0] = '\0';
+
+    // Neuer Zustand: einmal gross zeigen, dann zurueck zu den Zahlen. Nur in
+    // diesem Modus, und nur wenn sich wirklich etwas geaendert hat -- sonst
+    // spraenge die Anzeige bei jedem Paket.
+    if (changed && screen_mode == SCREEN_MODE_AUTO) {
+        // Die Frist gilt dem Bildschirmwechsel, nicht der Animation: ein neuer
+        // Zustand waehrend der Buddy schon steht wird nicht verschluckt --
+        // splash_set_anim() zeigt ihn sofort, und die Frist beginnt von vorn,
+        // damit auch der Neue seine vollen Sekunden bekommt.
+        if (current_screen != SCREEN_SPLASH) {
+            auto_splash_started = millis();
+            ui_show_screen(SCREEN_SPLASH);
+            Serial.printf("auto splash: zeige %s\n", host_anim);
+        }
+        auto_splash_until = millis() + AUTO_SPLASH_MS;
+    }
+}
+
+
+void ui_set_corner_anim(const char* name) {
+    // Kein Name heisst nicht "nichts tun". Der Host schickt "" wenn er nichts
+    // zu spiegeln hat -- der Splash nimmt das als "such dir selbst was aus".
+    // Tat die Ecke stattdessen gar nichts, blieb sie fuer immer auf der
+    // Animation stehen, mit der sie gebaut wurde, waehrend der Splash daneben
+    // munter wechselte. Also dieselbe Lesart wie dort.
+    usage_creature_host_driven = (name && name[0]);
+    if (!usage_creature_host_driven) name = splash_current_anim_name();
+    if (!name || !name[0]) return;
+    strlcpy(usage_creature_anim, name, sizeof(usage_creature_anim));
+    splash_mini_set_anim(usage_mini, usage_creature_anim);
+}
+
+
 static void global_click_cb(lv_event_t* e) {
     (void)e;
+    // Wer selbst umschaltet, soll nicht Sekunden spaeter zurueckgerissen
+    // werden: der automatische Rueckweg ist damit erledigt.
+    auto_splash_until = 0;
     if (current_screen == SCREEN_SPLASH) ui_show_screen(prev_non_splash_screen);
     else                                  ui_show_screen(SCREEN_SPLASH);
 }
@@ -1129,13 +1310,12 @@ void ui_show_screen(screen_t screen) {
     default: break;
     }
 
-    if (logo_img) {
-        if (screen == SCREEN_SPLASH) lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
-        else                          lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
-    }
-
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
+    // Erst nach current_screen: apply_corner_creature() liest die Variable,
+    // nicht das Argument. Davor entschied es noch nach dem alten Screen und
+    // versteckte auf dem Weg zum Usage-Screen beides -- die Ecke blieb leer.
+    apply_corner_creature();
     apply_battery_visibility();
 }
 

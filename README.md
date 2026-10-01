@@ -1,3 +1,41 @@
+> [!IMPORTANT]
+> ## Clawdmeter firmware, macOS fork
+>
+> Hermann Björgvin's Clawdmeter, by way of
+> [juppeee's `csb-buddy` branch](https://github.com/juppeee/Clawdmeter/tree/csb-buddy),
+> which taught the device to show what Claude Code is doing instead of guessing
+> from how fast your quota burns. This fork continues that branch.
+>
+> It pairs with
+> [ryanmaule/claude-session-browser](https://github.com/ryanmaule/claude-session-browser),
+> the macOS fork of the Session Browser. That app sends the field the display
+> modes read; no other host does.
+>
+> Added here: the usage screen's corner shows the buddy instead of the static
+> logo that normally sits there, three display modes (usage, Clawd, or switch to
+> Clawd for a few seconds each time Claude changes state), and a footer that
+> says `Needs you`, `Your turn`, `Limit reached` or `Idle` instead of cycling
+> verbs forever. The corner and the modes need fields only our app sends; the
+> footer works with juppeee's host too, since it reads the animation name his
+> app already sends.
+>
+> No licence, here or upstream. Hermann explains why in
+> [his README](https://github.com/HermannBjorgvin/Clawdmeter#licensing-gray-area-warning).
+>
+> Flashing from a Mac:
+>
+> ```
+> ./flash-mac.sh waveshare_amoled_216_c6
+> ```
+>
+> It finds the USB port and PlatformIO on its own, including the venv install
+> that never lands on `PATH`.
+>
+> The rest of this README is upstream's, updated where our changes affect it.
+> Worth a read.
+
+---
+
 > ### This is a fork
 >
 > The Clawdmeter — the device, this firmware, the board ports, the LVGL work,
@@ -7,7 +45,7 @@
 >
 > This branch (`csb-buddy`) adds what the
 > **[Claude Session Browser](https://github.com/juppeee/claude-session-browser)**
-> needs on Windows, so the device shows *what Claude Code is doing* rather than
+> needs, so the device shows *what Claude Code is doing* rather than
 > only how fast the quota is burning:
 >
 > - **A field in the BLE payload** (`a`) so a host can name the animation to
@@ -31,12 +69,13 @@
 > the usage meter and battery, Hermann's firmware works with the Session
 > Browser as it is — it simply ignores the extra field.
 >
-> The Session Browser is Windows-only, so that's the flashing command that
-> matters here — from this branch, with your device's COM port:
+> Flashing this branch, with your device's port:
 >
 > ```
 > pio run -d firmware -e waveshare_amoled_216_c6 -t upload --upload-port COM5
 > ```
+>
+> On a Mac, `./flash-mac.sh waveshare_amoled_216_c6` finds the port itself.
 >
 > Everything else about flashing is unchanged from upstream.
 >

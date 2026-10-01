@@ -27,7 +27,14 @@ if [ -z "$PORT" ]; then
     fi
 fi
 
-if ! command -v pio >/dev/null; then
+# PlatformIO installiert sich standardmaessig in eine eigene venv und legt
+# nichts in den PATH. Wer es so installiert hat, sah hier bisher "nicht
+# gefunden" und den Rat, es zu installieren -- obwohl es laengst da war.
+PIO=pio
+if ! command -v pio >/dev/null && [ -x "$HOME/.platformio/penv/bin/pio" ]; then
+    PIO="$HOME/.platformio/penv/bin/pio"
+fi
+if ! command -v "$PIO" >/dev/null && [ ! -x "$PIO" ]; then
     echo "Error: 'pio' not found. Install with:"
     echo "  brew install platformio"
     exit 1
@@ -39,8 +46,8 @@ echo "Port:  $PORT"
 echo ""
 
 cd "$SCRIPT_DIR/firmware"
-pio run -e "$BOARD" -t upload --upload-port "$PORT"
+"$PIO" run -e "$BOARD" -t upload --upload-port "$PORT"
 
 echo ""
 echo "=== Done ==="
-echo "Monitor with: pio device monitor -p $PORT -b 115200"
+echo "Monitor with: $PIO device monitor -p $PORT -b 115200"

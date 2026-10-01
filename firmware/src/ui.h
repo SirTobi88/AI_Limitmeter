@@ -13,6 +13,24 @@ void ui_update(const UsageData* data);
 void ui_tick_anim(void);
 void ui_show_screen(screen_t screen);
 void ui_toggle_splash(void);
+
+// Der kleine Buddy in der Ecke des Usage-Screens, an Stelle des Logos.
+// Aus = Logo wie bisher. ui_set_corner_anim() nimmt denselben Namen, den auch
+// splash_set_anim() bekommt.
+void ui_set_corner_creature(bool on);
+void ui_set_corner_anim(const char* name);
+
+// Derselbe Zustandsname noch einmal fuer die Fusszeile des Usage-Screens:
+// arbeitet Claude, laeuft die Wortliste; wartet er auf dich, steht es da.
+void ui_set_host_anim(const char* name);
+
+// Anzeigemodus des Geraets. AUTO zeigt bei jedem neuen Zustand kurz den
+// grossen Buddy und kehrt dann zu den Zahlen zurueck; Antippen bleibt in
+// jedem Modus frei und beendet einen laufenden Rueckweg.
+#define SCREEN_MODE_USAGE 0
+#define SCREEN_MODE_BUDDY 1
+#define SCREEN_MODE_AUTO  2
+void ui_set_screen_mode(int mode);
 screen_t ui_get_current_screen(void);
 void ui_update_ble_status(ble_state_t state, const char* name, const char* mac);
 void ui_update_battery(int percent, bool charging);
