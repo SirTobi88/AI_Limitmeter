@@ -24,6 +24,11 @@ import httpx
 from bleak import BleakClient
 from bleak.exc import BleakError
 
+try:
+    from . import clawd_activity
+except ImportError:  # run as a script, not as the daemon package
+    import clawd_activity
+
 DEVICE_NAME = "Clawdmeter"
 SERVICE_UUID = "4c41555a-4465-7669-6365-000000000001"
 RX_CHAR_UUID = "4c41555a-4465-7669-6365-000000000002"
@@ -31,6 +36,7 @@ REQ_CHAR_UUID = "4c41555a-4465-7669-6365-000000000004"
 
 POLL_INTERVAL = 60
 TICK = 5
+ACTIVITY_TICK = 1
 CONNECT_TIMEOUT = 20.0
 
 # macOS: token lives in Keychain (service "Claude Code-credentials").
@@ -328,6 +334,54 @@ def read_clock_setting() -> str:
     except OSError:
         pass
     return "off"
+
+
+def read_activity_settings() -> dict:
+    """Read the buddy options: activity (off|on), screen_mode
+    (usage|clawd|auto), corner_buddy (on|off).
+
+    activity defaults to "off", so nothing is added to the payload and the
+    device keeps picking its own animations until the user opts in.
+    """
+    opts = {"activity": "off", "screen_mode": "auto", "corner_buddy": "on"}
+    allowed = {"activity": ("off", "on"),
+               "screen_mode": ("usage", "clawd", "auto"),
+               "corner_buddy": ("off", "on")}
+    try:
+        if CONFIG_FILE.exists():
+            for line in CONFIG_FILE.read_text().splitlines():
+                line = line.split("#", 1)[0].strip()
+                if "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key, val = key.strip().lower(), val.strip().lower()
+                if key in allowed and val in allowed[key]:
+                    opts[key] = val
+    except OSError:
+        pass
+    return opts
+
+
+_SCREEN_MODES = {"usage": 0, "clawd": 1, "auto": 2}
+_WORK_ANIMS = {"work think", "work coding", "write"}
+WORK_ANIM_HOLD_S = 4
+
+
+def add_activity_fields(payload: dict) -> str | None:
+    """Add what Claude Code is doing ("a"), the display mode ("sm") and the
+    corner buddy switch ("ua") when the config opts in. Returns the animation
+    name sent, or None when activity is off (fields omitted entirely)."""
+    opts = read_activity_settings()
+    if opts["activity"] != "on":
+        for k in ("a", "sm", "ua"):
+            payload.pop(k, None)
+        return None
+    limit_hit = int(payload.get("s", 0) or 0) >= 100 or int(payload.get("w", 0) or 0) >= 100
+    anim = clawd_activity.current_anim(limit_hit=limit_hit)
+    payload["a"] = anim
+    payload["sm"] = _SCREEN_MODES[opts["screen_mode"]]
+    payload["ua"] = opts["corner_buddy"] == "on"
+    return anim
 
 
 def add_chime_field(payload: dict) -> None:
@@ -708,6 +762,9 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
 
     last_poll = 0.0
     used_successfully = False
+    last_payload: dict | None = None
+    last_anim: str | None = None
+    last_anim_sent = 0.0
     try:
         while client.is_connected and not stop_event.is_set():
             now = time.time()
@@ -717,12 +774,35 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                 payload = await poll_active_payload()
                 if payload is None:
                     log("No usable config dir this cycle")
-                elif await session.write_payload(payload):
-                    last_poll = time.time()
-                    used_successfully = True
+                else:
+                    last_anim = add_activity_fields(payload)
+                    if await session.write_payload(payload):
+                        last_poll = last_anim_sent = time.time()
+                        last_payload = payload
+                        used_successfully = True
+            elif last_payload is not None:
+                # Between polls, push a changed Claude Code state right away
+                # by resending the last reading with the new animation, so the
+                # buddy reacts within a second instead of at the next poll.
+                payload = dict(last_payload)
+                anim = add_activity_fields(payload)
+                # Within a turn Claude flips between thinking and tool calls
+                # several times a second; hold each working animation a few
+                # seconds. Anything that wants you (allow, done, limit) goes
+                # out at once.
+                churn = (anim in _WORK_ANIMS and last_anim in _WORK_ANIMS
+                         and now - last_anim_sent < WORK_ANIM_HOLD_S)
+                if anim != last_anim and not churn:
+                    add_clock_fields(payload)
+                    if await session.write_payload(payload):
+                        last_payload = payload
+                        last_anim = anim
+                        last_anim_sent = now
 
+            # Activity on: tick fast so state changes reach the device quickly.
+            tick = ACTIVITY_TICK if last_anim is not None else TICK
             try:
-                await asyncio.wait_for(session.refresh_requested.wait(), timeout=TICK)
+                await asyncio.wait_for(session.refresh_requested.wait(), timeout=tick)
             except asyncio.TimeoutError:
                 pass
     finally:

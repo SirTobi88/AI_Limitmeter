@@ -40,3 +40,20 @@ clock = off
 # named one first and falls back to the others if it does not respond, so a
 # board that is switched off or out of range never blocks the rest.
 # device =
+
+# Show on the device what Claude Code is doing — thinking, writing, waiting for
+# your permission, done, out of quota (macOS daemon). Needs the Claude Code
+# hooks, installed once with:
+#   daemon/.venv/bin/python daemon/clawd_activity.py --install
+# and the csb-buddy firmware, which knows the animations and the fields.
+#   off = the device picks its own animations by usage rate (default)
+#   on  = the device mirrors Claude Code's state
+# activity = on
+# What the device shows while activity is on:
+#   usage = the numbers; the corner buddy and footer still follow Claude
+#   clawd = the big animation all the time
+#   auto  = the numbers, switching to the animation for a few seconds whenever
+#           Claude's state changes (default)
+# screen_mode = auto
+# Animate the small buddy in the usage screen's corner (on, default) or not.
+# corner_buddy = on
