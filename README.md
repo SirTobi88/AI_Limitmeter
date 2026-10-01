@@ -65,10 +65,12 @@ The Clawd animations come from [claudepix](https://claudepix.vercel.app), [@amaa
 
 The device boots into the splash. Tap the screen anywhere to switch to the Usage view; tap again to flip back to the splash.
 
-|              Splash               |              Usage              |
-| :-------------------------------: | :-----------------------------: |
-| ![Splash](screenshots/splash.png) | ![Usage](screenshots/usage.png) |
-|   Splash; touch-toggle anytime    | Session and weekly utilization  |
+| Splash | Usage |
+| :----: | :---: |
+| ![Splash](screenshots/lcd_154/splash.png) | ![Usage](screenshots/lcd_154/usage.png) |
+| Splash: Clawd at work while Claude Code runs a tool | Usage: corner buddy and footer saying Claude needs your permission |
+
+<sub>Captured from an ESP32-S3-Touch-LCD-1.54 running this branch, with the macOS daemon's `activity = on`.</sub>
 
 While the splash is up, the middle (PWR) button cycles animations. **Hold the power button for 3 seconds, then release, to put the device into pairing mode** — this clears the saved Bluetooth bond and re-advertises. The firmware also auto-rotates animations every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
 
