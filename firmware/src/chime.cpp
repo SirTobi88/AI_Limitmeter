@@ -1,4 +1,5 @@
 #include "chime.h"
+#include <string.h>
 #include <Arduino.h>
 #include <math.h>
 #include "ESP_I2S.h"
@@ -28,9 +29,11 @@ static bool es8311_setup(void) {
     return true;
 }
 
+#define CUE_AMP_SETTLE_MS 150  // power-amp start-up before the first note
+
 static void chime_task(void* arg) {
     if (cfg.amp_enable) cfg.amp_enable(true);
-    delay(8);                                  // let the amp settle (avoids turn-on pop)
+    delay(CUE_AMP_SETTLE_MS);                  // amp start-up, else the strike is lost
     i2s.write((uint8_t*)bell_pcm, bell_pcm_len);
     delay(20);
     if (cfg.amp_enable) cfg.amp_enable(false);
@@ -76,18 +79,26 @@ static uint8_t         cue_len = 0;
 
 #define CUE_AMPLITUDE 9000    // ~28% of full scale — audible, no amp strain
 #define CUE_EDGE_MS   4       // attack/release ramp; without it the amp clicks
+#define CUE_TAIL_MS   120     // silence pushed behind a cue to flush the DMA ring
 
 static void cue_task(void* arg) {
     if (cfg.amp_enable) cfg.amp_enable(true);
-    delay(8);                                  // amp settle, same as the bell
+    // The power amp takes far longer than the bell's 8 ms to come up: on the
+    // LCD-1.54 the 90 ms "armed" blip vanished entirely and of the two-tone
+    // "paired" cue only the second note was heard. The bell is long enough to
+    // hide a lost attack; a cue is not, so wait until the amp is surely live.
+    delay(CUE_AMP_SETTLE_MS);
 
     static int16_t frames[256 * 2];            // stereo scratch, one cue at a time
     const uint32_t edge = (uint32_t)cfg.sample_rate * CUE_EDGE_MS / 1000;
+    const uint32_t t0   = millis();
+    uint32_t       cue_ms = 0;
 
     for (uint8_t n = 0; n < cue_len; n++) {
         const uint32_t total = (uint32_t)cfg.sample_rate * cue_seq[n].ms / 1000;
         const float    step  = 2.0f * (float)M_PI * cue_seq[n].freq_hz / cfg.sample_rate;
         float          phase = 0.0f;
+        cue_ms += cue_seq[n].ms;
         for (uint32_t done = 0; done < total; ) {
             uint32_t chunk = total - done;
             if (chunk > 256) chunk = 256;
@@ -106,7 +117,20 @@ static void cue_task(void* arg) {
         }
     }
 
-    delay(20);
+    // i2s.write() returns once the samples are in the DMA buffers, not once
+    // they have played — and a whole 90 ms blip fits in them. Switching the
+    // amp off 20 ms later cut the short cues to nothing (only the 200 ms
+    // two-tone was half audible). So push silence behind the tone to flush it
+    // through the DMA ring, and keep the amp on until the tone's own duration
+    // has passed on the wall clock.
+    memset(frames, 0, sizeof(frames));
+    for (uint32_t done = 0, pad = (uint32_t)cfg.sample_rate * CUE_TAIL_MS / 1000; done < pad; ) {
+        uint32_t chunk = pad - done;
+        if (chunk > 256) chunk = 256;
+        i2s.write((uint8_t*)frames, chunk * 4);
+        done += chunk;
+    }
+    while (millis() - t0 < cue_ms + CUE_TAIL_MS) delay(5);
     if (cfg.amp_enable) cfg.amp_enable(false);
     playing = false;
     vTaskDelete(nullptr);
