@@ -190,6 +190,9 @@ static void check_serial_cmd() {
             cmd_buf[cmd_pos] = '\0';
             if (strcmp(cmd_buf, "screenshot") == 0) send_screenshot();
             else if (strcmp(cmd_buf, "buzz") == 0)  sound_hal_play_reset();
+            // The two hold-to-pair cues, without pairing (which clears bonds).
+            else if (strcmp(cmd_buf, "beep armed") == 0)  sound_hal_play_pair_armed();
+            else if (strcmp(cmd_buf, "beep paired") == 0) sound_hal_play_paired();
             // Play the charge overlay without touching the cable — the real
             // trigger needs a USB transition, which is awkward to produce on a
             // device that is being flashed over that same cable.
