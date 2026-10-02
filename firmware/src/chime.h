@@ -47,5 +47,10 @@ enum chime_cue_t {
 };
 void chime_play_cue(chime_cue_t cue);
 
+// Overall level for every sound, 0..100 % of full (the board's codec volume
+// is the 100 % point). Applied to the samples, so it scales the bell and the
+// cues alike. Default 100.
+void chime_set_gain(uint8_t pct);
+
 // Currently a no-op (playback runs in its own task); kept for HAL symmetry.
 void chime_tick(void);

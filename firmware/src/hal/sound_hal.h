@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 // Optional audio output (a passive piezo buzzer driven by LEDC PWM). Used to
 // chime when the Claude session limit resets. Boards without a buzzer — the
@@ -31,3 +32,7 @@ enum sound_state_t {
     SOUND_STATE_LIMIT,       // the usage limit is used up
 };
 void sound_hal_play_state(sound_state_t state);
+
+// Overall volume for every sound, 0..100 % of the board's full level (the
+// daemon's `volume` option). Weak no-op default for boards without a speaker.
+void sound_hal_set_volume(uint8_t pct);

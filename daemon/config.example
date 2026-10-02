@@ -78,3 +78,7 @@ chime = off
 #   on  = play them (default)
 #   off = silent
 # state_sounds = on
+# Volume for every sound on the device (bell, state cues, pairing cues), in
+# percent of the board's full level. Takes effect with the next poll and is
+# remembered by the device across reboots.
+# volume = 70

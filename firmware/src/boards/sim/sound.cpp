@@ -10,3 +10,4 @@ void sound_hal_play_state(sound_state_t state) {
     static const char* names[] = { "needs you", "your turn", "limit" };
     printf("[sim] state cue: %s\n", names[state]);
 }
+void sound_hal_set_volume(uint8_t pct) { printf("[sim] volume %u%%\n", pct); }

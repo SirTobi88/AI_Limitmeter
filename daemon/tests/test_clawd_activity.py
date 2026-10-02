@@ -260,3 +260,17 @@ def test_clock_defaults_to_auto(tmp_path, monkeypatch):
     assert mod.read_clock_setting() == "auto"
     (tmp_path / "config").write_text("clock = off\n")
     assert mod.read_clock_setting() == "off"
+
+
+def test_volume_setting(tmp_path, monkeypatch):
+    cfg = tmp_path / "config"
+    monkeypatch.setattr(mod, "CONFIG_FILE", cfg)
+    assert mod.read_volume_setting() == 70
+    for text, want in (("volume = 40", 40), ("volume = 150", 100),
+                       ("volume = -5", 0), ("volume = 55%", 55), ("volume = loud", 70)):
+        cfg.write_text(text + "\n")
+        assert mod.read_volume_setting() == want, text
+    cfg.write_text("volume = 30\n")
+    p = {}
+    mod.add_chime_field(p)
+    assert p["vol"] == 30 and "c" not in p

@@ -9,6 +9,7 @@ struct UsageData {
     char status[16];         // "allowed", "limited", etc.
     bool chime;              // play the session-reset chime; false unless daemon opts in
     bool state_sounds;       // cues on Claude Code state changes ("ss")
+    int  volume;             // sound level 0..100 % ("vol"); -1 = not sent
     bool enterprise;         // true = Enterprise spending-limit account
     int time_pct;            // 0-100: fraction of billing period elapsed (Enterprise)
     int period_days;         // total billing period length in days (Enterprise)

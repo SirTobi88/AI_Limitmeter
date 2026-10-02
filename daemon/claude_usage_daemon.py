@@ -432,11 +432,34 @@ def add_activity_fields(payload: dict) -> str | None:
     return anim
 
 
+DEFAULT_VOLUME = 70
+
+
+def read_volume_setting() -> int:
+    """Read `volume` (0..100, % of the board's full sound level). Default 70."""
+    try:
+        if CONFIG_FILE.exists():
+            for line in CONFIG_FILE.read_text().splitlines():
+                line = line.split("#", 1)[0].strip()
+                if "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                if key.strip().lower() == "volume":
+                    try:
+                        return max(0, min(100, int(val.strip().rstrip("%"))))
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    return DEFAULT_VOLUME
+
+
 def add_chime_field(payload: dict) -> None:
     """Add "c":1 to the payload when the config opts in, so the firmware may
     sound the session-reset chime. Omitted entirely when chime is off."""
     if read_chime_setting() == "on":
         payload["c"] = 1
+    payload["vol"] = read_volume_setting()   # level for every sound on the device
 
 
 def detect_hour_format() -> int:

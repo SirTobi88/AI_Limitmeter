@@ -29,6 +29,8 @@ void sound_hal_tick(void)       { chime_tick(); }
 void sound_hal_play_pair_armed(void) { chime_play_cue(CHIME_CUE_PAIR_ARMED); }
 void sound_hal_play_paired(void)     { chime_play_cue(CHIME_CUE_PAIRED); }
 
+void sound_hal_set_volume(uint8_t pct) { chime_set_gain(pct); }
+
 void sound_hal_play_state(sound_state_t state) {
     switch (state) {
         case SOUND_STATE_NEEDS_YOU: chime_play_cue(CHIME_CUE_NEEDS_YOU); break;

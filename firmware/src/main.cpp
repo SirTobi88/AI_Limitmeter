@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <lvgl.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <esp_heap_caps.h>
 
 #include "data.h"
@@ -125,6 +126,7 @@ static bool parse_json(const char* json, UsageData* out) {
     // the reset chime never played. as<bool>() maps 1/true -> true, absent/0 -> false.
     out->chime = doc["c"].as<bool>();   // absent (old daemon / chime off) → stay silent
     out->state_sounds = doc["ss"].as<bool>();   // state-change cues (daemon default on)
+    out->volume = doc["vol"] | -1;              // sound level, -1 = host didn't say
     const char* acct = doc["acct"] | "pro";
     out->enterprise = (strcmp(acct, "ent") == 0);
     out->time_pct = doc["tp"] | 0;
@@ -323,6 +325,14 @@ void setup() {
     power_hal_init();
     imu_hal_init();
     sound_hal_init();
+    // Last volume the daemon sent, so sounds played before (or without) a
+    // host connection — the pairing cues — already have the right level.
+    {
+        Preferences prefs;
+        prefs.begin("clawdmeter", true);
+        sound_hal_set_volume(prefs.getUChar("vol", 100));
+        prefs.end();
+    }
     touch_hal_init();
 
     // ---- LVGL ----
@@ -357,6 +367,24 @@ void setup() {
 
     Serial.printf("Dashboard ready (%s, %dx%d), waiting for data on BLE...\n",
         board_caps().name, W, H);
+}
+
+static void apply_volume(int vol) {
+    static int current = -2;                 // -2 = not read from NVS yet
+    if (vol < 0 || vol > 100) return;        // not sent / out of range
+    Preferences prefs;
+    if (current == -2) {
+        prefs.begin("clawdmeter", true);
+        current = prefs.getUChar("vol", 100);
+        prefs.end();
+    }
+    if (vol == current) return;
+    current = vol;
+    sound_hal_set_volume((uint8_t)vol);
+    prefs.begin("clawdmeter", false);        // write only on change (flash wear)
+    prefs.putUChar("vol", (uint8_t)vol);
+    prefs.end();
+    Serial.printf("sound: volume %d%%\n", vol);
 }
 
 static ble_state_t last_ble_state = BLE_STATE_INIT;
@@ -601,6 +629,8 @@ void loop() {
             // Host-driven animation. Sent only when the host is configured to
             // mirror its desktop buddy; absent → "" → device keeps deciding.
             splash_set_anim(usage.anim);
+            // Sound level from the daemon's `volume`; kept in NVS across reboots.
+            apply_volume(usage.volume);
             // Cues for Claude's state changes (when the daemon sets "ss").
             state_sounds_on_state(usage.anim, usage.state_sounds);
             // Dieselbe Animation zusaetzlich klein in der Ecke des

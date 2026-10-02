@@ -139,7 +139,8 @@ plays a short cue on the state changes that want you:
 | one blip / rising two-tone | hold-to-pair: "release now" / "paired" |
 
 The state cues are on by default; `state_sounds = off` in the daemon config
-silences them. The first state after boot or a reconnect never sounds. The
+silences them. `volume = 0..100` (default 70) sets the level of every sound,
+in percent of the board's full level; the device remembers it across reboots. The first state after boot or a reconnect never sounds. The
 serial commands `buzz`, `beep needs`, `beep turn`, `beep limit`, `beep armed`
 and `beep paired` play each one on demand.
 

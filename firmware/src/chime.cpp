@@ -14,6 +14,12 @@ static I2SClass      i2s;
 static ChimeConfig   cfg;
 static bool          ready   = false;
 static volatile bool playing = false;
+static volatile uint16_t gain_q8 = 256;   // sample gain, 256 = 100 % (chime_set_gain)
+
+void chime_set_gain(uint8_t pct) {
+    if (pct > 100) pct = 100;
+    gain_q8 = (uint16_t)(pct * 256 / 100);
+}
 
 static bool es8311_setup(void) {
     es8311_handle_t es = es8311_create(0, cfg.es8311_addr);   // I2C port 0 (shared Wire bus)
@@ -34,7 +40,24 @@ static bool es8311_setup(void) {
 static void chime_task(void* arg) {
     if (cfg.amp_enable) cfg.amp_enable(true);
     delay(CUE_AMP_SETTLE_MS);                  // amp start-up, else the strike is lost
-    i2s.write((uint8_t*)bell_pcm, bell_pcm_len);
+    const uint16_t g = gain_q8;
+    if (g >= 256) {
+        i2s.write((uint8_t*)bell_pcm, bell_pcm_len);
+    } else {                                   // scale through a small buffer
+        static int16_t buf[512];
+        const size_t   n = bell_pcm_len / 2;   // samples; bytes may be unaligned
+        for (size_t done = 0; done < n; ) {
+            size_t chunk = n - done;
+            if (chunk > 512) chunk = 512;
+            for (size_t i = 0; i < chunk; i++) {
+                const uint8_t* b = &bell_pcm[(done + i) * 2];
+                const int16_t  v = (int16_t)(b[0] | (b[1] << 8));   // little-endian
+                buf[i] = (int16_t)(((int32_t)v * g) >> 8);
+            }
+            i2s.write((uint8_t*)buf, chunk * 2);
+            done += chunk;
+        }
+    }
     delay(20);
     if (cfg.amp_enable) cfg.amp_enable(false);
     playing = false;
@@ -102,7 +125,8 @@ static void cue_task(void* arg) {
     for (uint8_t n = 0; n < cue_len; n++) {
         const uint32_t total = (uint32_t)cfg.sample_rate * cue_seq[n].ms / 1000;
         const float    step  = 2.0f * (float)M_PI * cue_seq[n].freq_hz / cfg.sample_rate;
-        const float    amp   = cue_seq[n].freq_hz ? CUE_AMPLITUDE : 0.0f;   // 0 Hz = rest
+        const float    amp   = cue_seq[n].freq_hz                         // 0 Hz = rest
+                               ? CUE_AMPLITUDE * gain_q8 / 256.0f : 0.0f;
         float          phase = 0.0f;
         cue_ms += cue_seq[n].ms;
         for (uint32_t done = 0; done < total; ) {
