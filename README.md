@@ -125,6 +125,24 @@ Details worth knowing:
 - The Windows [Claude Session Browser](https://github.com/juppeee/claude-session-browser)
   sends the same state names and gets the same pictures.
 
+### Sounds
+
+On boards with a speaker (LCD-1.54, AMOLED-2.16, AMOLED-1.8) the device also
+plays a short cue on the state changes that want you:
+
+| Sound | When |
+| --- | --- |
+| two equal knocks | Claude needs your permission — once more after 2 minutes if you haven't reacted |
+| three rising notes | your turn — only when Claude was actually working before |
+| three low falling notes | the 5-hour or weekly limit is reached |
+| bell | the 5-hour limit has reset (`chime = on`) |
+| one blip / rising two-tone | hold-to-pair: "release now" / "paired" |
+
+The state cues are on by default; `state_sounds = off` in the daemon config
+silences them. The first state after boot or a reconnect never sounds. The
+serial commands `buzz`, `beep needs`, `beep turn`, `beep limit`, `beep armed`
+and `beep paired` play each one on demand.
+
 ## Hardware
 
 Boards supported out of the box:

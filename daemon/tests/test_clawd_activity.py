@@ -114,16 +114,26 @@ def test_payload_fields_follow_config(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.clawd_activity, "is_installed", lambda: True)
     p = {"s": 10, "w": 5}
     assert mod.add_activity_fields(p) == "done"
-    assert p == {"s": 10, "w": 5, "a": "done", "sm": 2, "ua": True}
+    assert p == {"s": 10, "w": 5, "a": "done", "sm": 2, "ua": True, "ss": True}
 
     cfg.write_text("activity = off\n")
     p = {"s": 10, "w": 5}
     assert mod.add_activity_fields(p) is None and "a" not in p
 
+    # state_sounds: on by default, gone with state_sounds = off
+    cfg.write_text("activity = on\n")
+    p = {"s": 10, "w": 5}
+    mod.add_activity_fields(p)
+    assert p["ss"] is True
+    cfg.write_text("activity = on\nstate_sounds = off\n")
+    p = {"s": 10, "w": 5, "ss": True}
+    mod.add_activity_fields(p)
+    assert "ss" not in p
+
     cfg.write_text("activity = on\nscreen_mode = clawd\ncorner_buddy = off\n")
     p = {"s": 10, "w": 5}
     assert mod.add_activity_fields(p) == "done"
-    assert p == {"s": 10, "w": 5, "a": "done", "sm": 1, "ua": False}
+    assert p == {"s": 10, "w": 5, "a": "done", "sm": 1, "ua": False, "ss": True}
 
     p = {"s": 100, "w": 5}
     assert mod.add_activity_fields(p) == "limit"

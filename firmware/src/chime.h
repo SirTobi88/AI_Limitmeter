@@ -35,9 +35,15 @@ void chime_play(void);
 //   ARMED  — one blip the moment releasing would pair ("now")
 //   PAIRED — a rising two-tone confirming the bonds were cleared
 // Non-blocking and gated by the same busy flag as chime_play().
+//   NEEDS_YOU — two equal knocks: Claude waits for your permission
+//   YOUR_TURN — three rising notes (E major): Claude finished its reply
+//   LIMIT     — three low falling notes: the usage limit is used up
 enum chime_cue_t {
     CHIME_CUE_PAIR_ARMED,
     CHIME_CUE_PAIRED,
+    CHIME_CUE_NEEDS_YOU,
+    CHIME_CUE_YOUR_TURN,
+    CHIME_CUE_LIMIT,
 };
 void chime_play_cue(chime_cue_t cue);
 

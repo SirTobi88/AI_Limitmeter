@@ -8,6 +8,7 @@
 #include "ui.h"
 #include "ble.h"
 #include "splash.h"
+#include "state_sounds.h"
 #include "charge_anim.h"
 #include "usage_rate.h"
 #include "idle.h"
@@ -123,6 +124,7 @@ static bool parse_json(const char* json, UsageData* out) {
     // `|` only takes a real JSON boolean — any number fell back to false, so
     // the reset chime never played. as<bool>() maps 1/true -> true, absent/0 -> false.
     out->chime = doc["c"].as<bool>();   // absent (old daemon / chime off) → stay silent
+    out->state_sounds = doc["ss"].as<bool>();   // state-change cues (daemon default on)
     const char* acct = doc["acct"] | "pro";
     out->enterprise = (strcmp(acct, "ent") == 0);
     out->time_pct = doc["tp"] | 0;
@@ -193,6 +195,10 @@ static void check_serial_cmd() {
             // The two hold-to-pair cues, without pairing (which clears bonds).
             else if (strcmp(cmd_buf, "beep armed") == 0)  sound_hal_play_pair_armed();
             else if (strcmp(cmd_buf, "beep paired") == 0) sound_hal_play_paired();
+            // ...and the Claude Code state cues.
+            else if (strcmp(cmd_buf, "beep needs") == 0) sound_hal_play_state(SOUND_STATE_NEEDS_YOU);
+            else if (strcmp(cmd_buf, "beep turn") == 0)  sound_hal_play_state(SOUND_STATE_YOUR_TURN);
+            else if (strcmp(cmd_buf, "beep limit") == 0) sound_hal_play_state(SOUND_STATE_LIMIT);
             // Play the charge overlay without touching the cable — the real
             // trigger needs a USB transition, which is awkward to produce on a
             // device that is being flashed over that same cable.
@@ -425,6 +431,7 @@ void loop() {
     power_hal_tick();
     imu_hal_tick();
     sound_hal_tick();
+    state_sounds_tick();
     splash_tick();
     splash_mascot_tick();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
@@ -594,6 +601,8 @@ void loop() {
             // Host-driven animation. Sent only when the host is configured to
             // mirror its desktop buddy; absent → "" → device keeps deciding.
             splash_set_anim(usage.anim);
+            // Cues for Claude's state changes (when the daemon sets "ss").
+            state_sounds_on_state(usage.anim, usage.state_sounds);
             // Dieselbe Animation zusaetzlich klein in der Ecke des
             // Usage-Screens, wenn der Host das moechte.
             ui_set_screen_mode(usage.screen_mode);

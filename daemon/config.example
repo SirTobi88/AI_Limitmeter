@@ -71,3 +71,10 @@ chime = off
 # screen_mode = auto
 # Animate the small buddy in the usage screen's corner (on, default) or not.
 # corner_buddy = on
+# Short sounds on Claude Code state changes, on boards with a speaker
+# (LCD-1.54, AMOLED-2.16, AMOLED-1.8): two knocks when Claude needs your
+# permission (once more after 2 min if you haven't reacted), three rising notes
+# when it's your turn, three low falling notes when the limit is reached.
+#   on  = play them (default)
+#   off = silent
+# state_sounds = on

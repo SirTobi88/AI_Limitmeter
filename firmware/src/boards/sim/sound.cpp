@@ -6,3 +6,7 @@ void sound_hal_tick(void) {}
 void sound_hal_play_reset(void) { printf("[sim] chime! (session reset)\n"); }
 void sound_hal_play_pair_armed(void) { printf("[sim] pair armed\n"); }
 void sound_hal_play_paired(void) { printf("[sim] paired\n"); }
+void sound_hal_play_state(sound_state_t state) {
+    static const char* names[] = { "needs you", "your turn", "limit" };
+    printf("[sim] state cue: %s\n", names[state]);
+}

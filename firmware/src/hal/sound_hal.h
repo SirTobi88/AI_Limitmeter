@@ -21,3 +21,13 @@ void sound_hal_play_reset(void);
 // notice (see that board's sound.cpp).
 void sound_hal_play_pair_armed(void);
 void sound_hal_play_paired(void);
+
+// Short cues for Claude Code state changes (see state_sounds.cpp for when
+// they fire). Optional: a weak no-op default (sound_hal_defaults.cpp) covers
+// every board without a speaker, so only the boards with one implement it.
+enum sound_state_t {
+    SOUND_STATE_NEEDS_YOU,   // Claude waits for your permission
+    SOUND_STATE_YOUR_TURN,   // Claude finished its reply
+    SOUND_STATE_LIMIT,       // the usage limit is used up
+};
+void sound_hal_play_state(sound_state_t state);

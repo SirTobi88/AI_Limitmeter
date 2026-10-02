@@ -369,15 +369,17 @@ def read_clock_setting() -> str:
 
 def read_activity_settings() -> dict:
     """Read the buddy options: activity (auto|on|off), screen_mode
-    (usage|clawd|auto), corner_buddy (on|off).
+    (usage|clawd|auto), corner_buddy (on|off), state_sounds (off|on).
 
     activity defaults to "auto": on once the Claude Code hooks are installed
     (clawd_activity.py --install, which install-mac.sh offers), off until
     then — without hooks there is no state to show, and "on" would only ever
     report a sleeping Clawd.
     """
-    opts = {"activity": "auto", "screen_mode": "auto", "corner_buddy": "on"}
+    opts = {"activity": "auto", "screen_mode": "auto", "corner_buddy": "on",
+            "state_sounds": "on"}
     allowed = {"activity": ("auto", "off", "on"),
+               "state_sounds": ("off", "on"),
                "screen_mode": ("usage", "clawd", "auto"),
                "corner_buddy": ("off", "on")}
     try:
@@ -401,20 +403,21 @@ _SCREEN_MODES = {"usage": 0, "clawd": 1, "auto": 2}
 def _activity_key(payload: dict) -> tuple:
     """What the device sees of the buddy settings; a change in any of them is
     worth a write between polls."""
-    return payload.get("a"), payload.get("sm"), payload.get("ua")
+    return payload.get("a"), payload.get("sm"), payload.get("ua"), payload.get("ss")
 _WORK_ANIMS = {"work think", "work coding", "write"}
 WORK_ANIM_HOLD_S = 4
 
 
 def add_activity_fields(payload: dict) -> str | None:
-    """Add what Claude Code is doing ("a"), the display mode ("sm") and the
-    corner buddy switch ("ua") when the config opts in. Returns the animation
+    """Add what Claude Code is doing ("a"), the display mode ("sm"), the
+    corner buddy switch ("ua") and the state-sound switch ("ss") when the
+    config opts in. Returns the animation
     name sent, or None when activity is off (fields omitted entirely)."""
     opts = read_activity_settings()
     active = opts["activity"] == "on" or (
         opts["activity"] == "auto" and clawd_activity.is_installed())
     if not active:
-        for k in ("a", "sm", "ua"):
+        for k in ("a", "sm", "ua", "ss"):
             payload.pop(k, None)
         return None
     limit_hit = int(payload.get("s", 0) or 0) >= 100 or int(payload.get("w", 0) or 0) >= 100
@@ -422,6 +425,10 @@ def add_activity_fields(payload: dict) -> str | None:
     payload["a"] = anim
     payload["sm"] = _SCREEN_MODES[opts["screen_mode"]]
     payload["ua"] = opts["corner_buddy"] == "on"
+    if opts["state_sounds"] == "on":
+        payload["ss"] = True        # the device sounds allow / done / limit
+    else:
+        payload.pop("ss", None)
     return anim
 
 
@@ -835,7 +842,7 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
     used_successfully = False
     last_payload: dict | None = None
     last_anim: str | None = None
-    last_key: tuple = (None, None, None)
+    last_key: tuple = (None, None, None, None)
     last_anim_sent = 0.0
     try:
         while client.is_connected and not stop_event.is_set():

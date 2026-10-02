@@ -71,8 +71,13 @@ void chime_play(void) {
 
 struct cue_note { uint16_t freq_hz; uint16_t ms; };
 
-static const cue_note cue_armed[]  = { {880, 90} };
-static const cue_note cue_paired[] = { {660, 70}, {988, 130} };
+// freq_hz 0 = a rest (silence) between notes.
+static const cue_note cue_armed[]     = { {880, 90} };
+static const cue_note cue_paired[]    = { {660, 70}, {988, 130} };
+static const cue_note cue_needs_you[] = { {880, 80}, {0, 70}, {880, 80} };
+static const cue_note cue_your_turn[] = { {659, 90}, {831, 90}, {988, 180} };   // E major, rising
+static const cue_note cue_limit[]     = { {523, 140}, {392, 140}, {262, 240} };
+#define CUE_SET(a) do { seq = a; len = (uint8_t)(sizeof(a) / sizeof(a[0])); } while (0)
 
 static const cue_note* cue_seq = nullptr;
 static uint8_t         cue_len = 0;
@@ -97,6 +102,7 @@ static void cue_task(void* arg) {
     for (uint8_t n = 0; n < cue_len; n++) {
         const uint32_t total = (uint32_t)cfg.sample_rate * cue_seq[n].ms / 1000;
         const float    step  = 2.0f * (float)M_PI * cue_seq[n].freq_hz / cfg.sample_rate;
+        const float    amp   = cue_seq[n].freq_hz ? CUE_AMPLITUDE : 0.0f;   // 0 Hz = rest
         float          phase = 0.0f;
         cue_ms += cue_seq[n].ms;
         for (uint32_t done = 0; done < total; ) {
@@ -107,7 +113,7 @@ static void cue_task(void* arg) {
                 float env = 1.0f;
                 if (pos < edge)                env = (float)pos / (float)edge;
                 else if (total - pos < edge)   env = (float)(total - pos) / (float)edge;
-                const int16_t s = (int16_t)(sinf(phase) * CUE_AMPLITUDE * env);
+                const int16_t s = (int16_t)(sinf(phase) * amp * env);
                 phase += step;
                 frames[i * 2]     = s;
                 frames[i * 2 + 1] = s;
@@ -138,8 +144,15 @@ static void cue_task(void* arg) {
 
 void chime_play_cue(chime_cue_t cue) {
     if (!ready || playing) return;
-    if (cue == CHIME_CUE_PAIRED) { cue_seq = cue_paired; cue_len = 2; }
-    else                         { cue_seq = cue_armed;  cue_len = 1; }
+    const cue_note* seq; uint8_t len;
+    switch (cue) {
+        case CHIME_CUE_PAIRED:    CUE_SET(cue_paired);    break;
+        case CHIME_CUE_NEEDS_YOU: CUE_SET(cue_needs_you); break;
+        case CHIME_CUE_YOUR_TURN: CUE_SET(cue_your_turn); break;
+        case CHIME_CUE_LIMIT:     CUE_SET(cue_limit);     break;
+        default:                  CUE_SET(cue_armed);     break;
+    }
+    cue_seq = seq; cue_len = len;
     playing = true;
     if (xTaskCreatePinnedToCore(cue_task, "chime_cue", 4096, nullptr, 1, nullptr, 0) != pdPASS)
         playing = false;   // couldn't spawn — stay silent rather than wedge the flag
