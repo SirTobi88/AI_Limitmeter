@@ -119,7 +119,10 @@ static bool parse_json(const char* json, UsageData* out) {
     out->weekly_pct = doc["w"] | 0.0f;
     out->weekly_reset_mins = doc["wr"] | -1;
     strlcpy(out->status, doc["st"] | "unknown", sizeof(out->status));
-    out->chime = doc["c"] | false;   // absent (old daemon / chime off) → stay silent
+    // as<bool>(), not `| false`: every daemon sends "c":1, and ArduinoJson's
+    // `|` only takes a real JSON boolean — any number fell back to false, so
+    // the reset chime never played. as<bool>() maps 1/true -> true, absent/0 -> false.
+    out->chime = doc["c"].as<bool>();   // absent (old daemon / chime off) → stay silent
     const char* acct = doc["acct"] | "pro";
     out->enterprise = (strcmp(acct, "ent") == 0);
     out->time_pct = doc["tp"] | 0;
@@ -127,12 +130,12 @@ static bool parse_json(const char* json, UsageData* out) {
     strlcpy(out->reset_date, doc["rd"] | "", sizeof(out->reset_date));
     strlcpy(out->anim, doc["a"] | "", sizeof(out->anim));
     // Absent (aelterer Host) → aus, also Logo wie bisher.
-    out->corner_anim = doc["ua"] | false;
+    out->corner_anim = doc["ua"].as<bool>();
     // Absent (aelterer Host) → 0, also Usage-Screen wie bisher.
     out->screen_mode = doc["sm"] | 0;
     out->clock_epoch = doc["t"] | 0L;
     out->clock_fmt = doc["tf"] | 24;
-    out->ok = doc["ok"] | false;
+    out->ok = doc["ok"].as<bool>();
     out->valid = true;
     return true;
 }
