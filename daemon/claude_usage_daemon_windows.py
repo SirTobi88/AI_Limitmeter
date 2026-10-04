@@ -26,6 +26,11 @@ from bleak import BleakClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
+try:
+    from . import clawd_activity
+except ImportError:  # run as a script, not as the daemon package
+    import clawd_activity
+
 DEVICE_NAME = "Clawdmeter"
 SERVICE_UUID = "4c41555a-4465-7669-6365-000000000001"
 RX_CHAR_UUID = "4c41555a-4465-7669-6365-000000000002"
@@ -33,6 +38,7 @@ REQ_CHAR_UUID = "4c41555a-4465-7669-6365-000000000004"
 
 POLL_INTERVAL = 60
 TICK = 5
+ACTIVITY_TICK = 1          # while Claude Code's state is mirrored: react within a second
 CONNECT_RETRIES = 3        # D-01: attempts before giving up on a device
 CONNECT_RETRY_DELAY = 2.0  # D-01: seconds between failed connect attempts
 ZOMBIE_BREAK_LIMIT = 1     # D-03: consecutive write failures before abandoning a half-open link
@@ -155,11 +161,98 @@ def read_clock_setting() -> str:
     return "auto"
 
 
+def read_activity_settings() -> dict:
+    """Read the buddy options: activity (auto|on|off), screen_mode
+    (usage|clawd|auto), corner_buddy (on|off), state_sounds (off|on).
+
+    activity defaults to "auto": on once the Claude Code hooks are installed
+    (clawd_activity.py --install, which install-windows.ps1 offers), off until
+    then — without hooks there is no state to show.
+    """
+    opts = {"activity": "auto", "screen_mode": "auto", "corner_buddy": "on",
+            "state_sounds": "on"}
+    allowed = {"activity": ("auto", "off", "on"),
+               "state_sounds": ("off", "on"),
+               "screen_mode": ("usage", "clawd", "auto"),
+               "corner_buddy": ("off", "on")}
+    try:
+        if CONFIG_FILE.exists():
+            for line in CONFIG_FILE.read_text().splitlines():
+                line = line.split("#", 1)[0].strip()
+                if "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key, val = key.strip().lower(), val.strip().lower()
+                if key in allowed and val in allowed[key]:
+                    opts[key] = val
+    except OSError:
+        pass
+    return opts
+
+
+_SCREEN_MODES = {"usage": 0, "clawd": 1, "auto": 2}
+_WORK_ANIMS = {"work think", "work coding", "write"}
+WORK_ANIM_HOLD_S = 4
+
+
+def _activity_key(payload: dict) -> tuple:
+    """What the device sees of the buddy settings; a change in any of them is
+    worth a write between polls."""
+    return payload.get("a"), payload.get("sm"), payload.get("ua"), payload.get("ss")
+
+
+def add_activity_fields(payload: dict) -> str | None:
+    """Add what Claude Code is doing ("a"), the display mode ("sm"), the
+    corner buddy switch ("ua") and the state-sound switch ("ss") when the
+    config opts in. Returns the animation name sent, or None when activity is
+    off (fields omitted entirely, so the device picks its own animations)."""
+    opts = read_activity_settings()
+    active = opts["activity"] == "on" or (
+        opts["activity"] == "auto" and clawd_activity.is_installed())
+    if not active:
+        for k in ("a", "sm", "ua", "ss"):
+            payload.pop(k, None)
+        return None
+    limit_hit = int(payload.get("s", 0) or 0) >= 100 or int(payload.get("w", 0) or 0) >= 100
+    anim = clawd_activity.current_anim(limit_hit=limit_hit)
+    payload["a"] = anim
+    payload["sm"] = _SCREEN_MODES[opts["screen_mode"]]
+    payload["ua"] = opts["corner_buddy"] == "on"
+    if opts["state_sounds"] == "on":
+        payload["ss"] = True        # the device sounds allow / done / limit
+    else:
+        payload.pop("ss", None)
+    return anim
+
+
+DEFAULT_VOLUME = 70
+
+
+def read_volume_setting() -> int:
+    """Read `volume` (0..100, % of the board's full sound level). Default 70."""
+    try:
+        if CONFIG_FILE.exists():
+            for line in CONFIG_FILE.read_text().splitlines():
+                line = line.split("#", 1)[0].strip()
+                if "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                if key.strip().lower() == "volume":
+                    try:
+                        return max(0, min(100, int(val.strip().rstrip("%"))))
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    return DEFAULT_VOLUME
+
+
 def add_chime_field(payload: dict) -> None:
     """Add "c":1 to the payload when the config opts in, so the firmware may
     sound the session-reset chime. Omitted entirely when chime is off."""
     if read_chime_setting() == "on":
         payload["c"] = 1
+    payload["vol"] = read_volume_setting()   # level for every sound on the device
 
 
 def detect_hour_format() -> int:
@@ -659,6 +752,12 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
     last_poll = 0.0  # D-03: poll immediately on first connect
     used_successfully = False
     consecutive_failures = 0  # D-03: zombie-link break counter
+    # Claude Code's state between polls: the last reading is resent with the
+    # new "a" (or a changed screen_mode / corner_buddy) as soon as it changes.
+    last_payload: dict | None = None
+    last_anim: str | None = None
+    last_key: tuple = (None, None, None, None)
+    last_anim_sent = 0.0
 
     def note_write_failure() -> bool:
         """Count a failed device write toward the zombie-link breaker.
@@ -691,6 +790,7 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                 # show "No data" until the CLI re-seeds it.
                 token = read_token()  # D-09: fresh each cycle
                 if not token:
+                    last_payload = None   # nothing to resend over "No data"
                     log("No token; signalling no-data to device")
                     if tray_state:
                         tray_state.set_error("token expired — run claude login")
@@ -713,8 +813,11 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                         if tray_state:
                             tray_state.set_error("token expired — run claude login")
                     if payload is not None:
+                        last_anim = add_activity_fields(payload)
+                        last_key = _activity_key(payload)
                         if await session.write_payload(payload):
-                            last_poll = time.time()
+                            last_poll = last_anim_sent = time.time()
+                            last_payload = payload
                             used_successfully = True
                             consecutive_failures = 0  # D-03: reset on success
                             if tray_state:
@@ -724,6 +827,7 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                     elif expired:
                         # Token genuinely dead -> show "No data" now instead of stale numbers.
                         # Transient poll failures (payload None without expiry) stay silent.
+                        last_payload = None
                         log("No data (token dead); signalling idle to device")
                         if await session.write_payload({"ok": False}):
                             last_poll = time.time()
@@ -735,13 +839,41 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                     # toast "token expired" — that mislabeled a boot-time DNS blip
                     # as an auth problem (SC#5). Leave tray state unchanged; the next
                     # tick retries and set_connected() recovers it.
+            elif last_payload is not None:
+                # Between polls, push a changed Claude Code state -- or a
+                # changed screen_mode / corner_buddy in the config -- right
+                # away by resending the last reading with the new fields, so
+                # the device reacts within a second instead of at the next poll.
+                payload = dict(last_payload)
+                anim = add_activity_fields(payload)
+                # Within a turn Claude flips between thinking and tool calls
+                # several times a second; hold each working animation a few
+                # seconds. Anything that wants you (allow, done, limit) goes
+                # out at once.
+                churn = (anim in _WORK_ANIMS and last_anim in _WORK_ANIMS
+                         and now - last_anim_sent < WORK_ANIM_HOLD_S)
+                key = _activity_key(payload)
+                mode_changed = key[1:] != last_key[1:]
+                if mode_changed or (anim != last_anim and not churn):
+                    add_clock_fields(payload)
+                    if await session.write_payload(payload):
+                        consecutive_failures = 0
+                        last_payload = payload
+                        last_key = key
+                        if anim != last_anim:
+                            last_anim = anim
+                            last_anim_sent = now
+                    elif note_write_failure():
+                        break
 
             # Wake on a refresh request OR a stop, whichever comes first. Waking
             # promptly on stop_event is what lets the finally below run
             # client.disconnect() before the process exits, so the peer gets a
             # clean GATT disconnect (returns to its waiting screen) instead of
             # being left frozen on stale data after Quit (SC#3 graceful shutdown).
-            await _wait_first(session.refresh_requested, stop_event, timeout=TICK)
+            # Activity on: tick fast so state changes reach the device quickly.
+            tick = ACTIVITY_TICK if last_anim is not None else TICK
+            await _wait_first(session.refresh_requested, stop_event, timeout=tick)
     finally:
         # Clean GATT disconnect on the way out — this is what tells the peripheral
         # the link is gone. WinRT can surface a raw OSError (not BleakError) here,

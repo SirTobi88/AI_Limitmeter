@@ -54,9 +54,11 @@ chime = off
 # device =
 
 # Show on the device what Claude Code is doing — thinking, writing, waiting for
-# your permission, done, out of quota (macOS daemon). Needs the Claude Code
-# hooks — install-mac.sh offers them, or install them yourself with:
-#   daemon/.venv/bin/python daemon/clawd_activity.py --install
+# your permission, done, out of quota (macOS and Windows daemons). Needs the
+# Claude Code hooks — install-mac.sh / install-windows.ps1 offer them, or
+# install them yourself with:
+#   daemon/.venv/bin/python daemon/clawd_activity.py --install        (macOS)
+#   .venv\Scripts\python.exe daemon\clawd_activity.py --install       (Windows)
 #   auto = mirror Claude Code's state once the hooks are installed (default)
 #   on   = always send the state (shows a sleeping Clawd without hooks)
 #   off  = the device picks its own animations by usage rate

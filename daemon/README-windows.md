@@ -231,6 +231,32 @@ launched.
 
 ---
 
+## Claude Code state on the device
+
+`install-windows.ps1` offers Claude Code hooks (default yes). With them in place the
+device shows what Claude Code is doing — thinking, running a tool, writing, waiting for
+your permission, your turn — on the splash, in the usage screen's corner and in the
+footer, and plays the state sounds on boards with a speaker. The daemon's
+`activity = auto` default switches this on by itself once the hooks are installed.
+
+- The hooks are entries in `%USERPROFILE%\.claude\settings.json` that run
+  `daemon\clawd_activity.py --hook` through the base interpreter's `pythonw.exe` (no
+  console window on each tool call). Nothing else in that file is touched.
+- Each session drops a small state file into `%LOCALAPPDATA%\Clawdmeter\activity`; the
+  daemon folds them into one animation name every second and sends it between polls.
+- Install or remove them by hand:
+
+  ```powershell
+  .venv\Scripts\python.exe daemon\clawd_activity.py --install
+  .venv\Scripts\python.exe daemon\clawd_activity.py --uninstall
+  .venv\Scripts\python.exe daemon\clawd_activity.py --status    # what the device would show now
+  ```
+
+- `activity`, `screen_mode`, `corner_buddy`, `state_sounds` and `volume` in
+  `%LOCALAPPDATA%\Clawdmeter\config` tune it — see `daemon\config.example`.
+
+---
+
 ## What is NOT covered here
 
 - PyInstaller / one-file `.exe` packaging — v2

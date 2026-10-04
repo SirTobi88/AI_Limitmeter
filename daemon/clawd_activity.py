@@ -28,7 +28,16 @@ import sys
 import time
 from pathlib import Path
 
-ACTIVITY_DIR = Path.home() / ".config" / "claude-usage-monitor" / "activity"
+def _default_activity_dir() -> Path:
+    # Windows keeps the daemon's config and log under %LOCALAPPDATA%\Clawdmeter;
+    # the session files go next to them.
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "Clawdmeter" / "activity"
+    return Path.home() / ".config" / "claude-usage-monitor" / "activity"
+
+
+ACTIVITY_DIR = _default_activity_dir()
 CLAUDE_SETTINGS = Path.home() / ".claude" / "settings.json"
 HOOK_MARK = "clawd_activity.py"
 
@@ -145,7 +154,18 @@ def current_anim(limit_hit: bool = False, now: float | None = None,
 # ---- settings.json install ---------------------------------------------
 
 def _hook_command() -> str:
-    return f'"{sys.executable}" "{Path(__file__).resolve()}" --hook'
+    script = Path(__file__).resolve()
+    if sys.platform == "win32":
+        # Claude Code starts the hook as a process of its own on every tool
+        # call; python.exe would flash a console window each time. The base
+        # interpreter's pythonw.exe has none and still reads the event from
+        # stdin (the hook is stdlib-only, so it needs no venv — and the venv's
+        # pythonw is a stub that relaunches the console python). Forward
+        # slashes read the same whether the line goes to cmd.exe or Git Bash.
+        pythonw = Path(sys.base_exec_prefix) / "pythonw.exe"
+        exe = pythonw if pythonw.exists() else Path(sys.executable)
+        return f'"{exe.as_posix()}" "{script.as_posix()}" --hook'
+    return f'"{sys.executable}" "{script}" --hook'
 
 
 def _is_ours(h) -> bool:
@@ -180,7 +200,7 @@ def is_installed(settings_path: Path = CLAUDE_SETTINGS) -> bool:
     if hit and hit[0] == mtime:
         return hit[1]
     try:
-        hooks = json.loads(settings_path.read_text()).get("hooks") or {}
+        hooks = json.loads(settings_path.read_text(encoding="utf-8")).get("hooks") or {}
         found = any(_is_ours(h)
                     for groups in hooks.values() if isinstance(groups, list)
                     for g in groups if isinstance(g, dict)
@@ -192,8 +212,10 @@ def is_installed(settings_path: Path = CLAUDE_SETTINGS) -> bool:
 
 
 def set_installed(on: bool, settings_path: Path = CLAUDE_SETTINGS) -> None:
+    # UTF-8 explicitly: Windows would read and write the locale code page and
+    # mangle any non-ASCII text the user keeps in settings.json.
     try:
-        settings = json.loads(settings_path.read_text())
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         settings = {}
     hooks = settings.get("hooks")
@@ -217,7 +239,8 @@ def set_installed(on: bool, settings_path: Path = CLAUDE_SETTINGS) -> None:
         settings.pop("hooks", None)
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = settings_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(settings, indent=2) + "\n")
+    tmp.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
+                   encoding="utf-8")
     os.replace(tmp, settings_path)
 
 

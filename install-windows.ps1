@@ -1,7 +1,8 @@
 # install-windows.ps1 - Clawdmeter Windows turnkey bootstrap (D-09)
 #
 # Creates a Python virtual environment, installs dependencies from
-# daemon\requirements-windows.txt, registers the tray app to launch at login
+# daemon\requirements-windows.txt, offers the Claude Code hooks that let the
+# device show what Claude is doing, registers the tray app to launch at login
 # (HKCU\...\Run, no admin required), and starts the tray app immediately.
 #
 # Usage:
@@ -82,6 +83,25 @@ Log "Installing dependencies from daemon\requirements-windows.txt ..."
 & $PythonExe -m pip install --quiet -r $RequirementsFile
 if ($LASTEXITCODE -ne 0) { throw "pip install failed (exit $LASTEXITCODE)" }
 Log "Dependencies installed"
+
+# ------------------------------------------------------------------
+# Step 2b: Claude Code hooks (what Claude is doing -> the device)
+# ------------------------------------------------------------------
+# Default yes, as in install-mac.sh; the daemon's `activity = auto` switches
+# itself on once they are in. Only entries that run clawd_activity.py are
+# touched in %USERPROFILE%\.claude\settings.json.
+$ActivityScript = Join-Path $RepoRoot "daemon\clawd_activity.py"
+$Answer = "y"
+if (-not [Console]::IsInputRedirected) {
+    $Answer = Read-Host "Show what Claude Code is doing on the device (installs Claude Code hooks)? [Y/n]"
+}
+if ($Answer -match '^[Nn]') {
+    Log "Hooks skipped. Later: .venv\Scripts\python.exe daemon\clawd_activity.py --install"
+} else {
+    & $PythonExe $ActivityScript --install
+    if ($LASTEXITCODE -ne 0) { throw "Hook install failed (exit $LASTEXITCODE)" }
+    Log "Hooks installed - takes effect in Claude Code sessions started from now on"
+}
 
 # ------------------------------------------------------------------
 # Step 3: Register autostart (HKCU\Run, per-user, no admin needed)

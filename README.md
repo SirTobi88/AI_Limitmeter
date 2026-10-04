@@ -23,18 +23,21 @@
 >   — three display modes (usage, Clawd, or Clawd for a few seconds on each
 >   state change), an animated corner buddy, and a footer that says
 >   `Needs you`, `Your turn`, `Limit reached` or `Idle`.
-> - **Here:** the macOS daemon drives all of that itself from Claude Code
->   hooks — no Session Browser needed. `./install-mac.sh` offers to install
->   the hooks, and out of the box the device then shows the clock, the
->   corner Clawd following Claude Code, and the big animation for a few
->   seconds on each state change. Hooks later, by hand:
+> - **Here:** the macOS and Windows daemons drive all of that themselves from
+>   Claude Code hooks — no Session Browser needed. `./install-mac.sh` and
+>   `install-windows.ps1` offer to install the hooks, and out of the box the
+>   device then shows the clock, the corner Clawd following Claude Code, and
+>   the big animation for a few seconds on each state change. Hooks later, by
+>   hand:
 >
 >   ```bash
->   daemon/.venv/bin/python daemon/clawd_activity.py --install
+>   daemon/.venv/bin/python daemon/clawd_activity.py --install        # macOS
+>   .venv\Scripts\python.exe daemon\clawd_activity.py --install       # Windows
 >   ```
 >
 >   All of it can be turned off in `~/.config/claude-usage-monitor/config`
->   (`clock`, `activity`, `screen_mode`, `corner_buddy` — see
+>   (`%LOCALAPPDATA%\Clawdmeter\config` on Windows; `clock`, `activity`,
+>   `screen_mode`, `corner_buddy` — see
 >   [`daemon/config.example`](daemon/config.example)).
 > - **Here, too:** upstream's official Clawd animations and corner mascot,
 >   with the fork's features carried over to that engine, plus one more
@@ -47,8 +50,8 @@
 >   LCD-4 port and the desktop simulator.
 >
 > Tested on a Waveshare ESP32-S3-Touch-LCD-1.54 and in the simulator.
-> On Windows, the [Claude Session Browser](https://github.com/juppeee/claude-session-browser)
-> sends the same fields; the Linux and Windows daemons only send usage.
+> The [Claude Session Browser](https://github.com/juppeee/claude-session-browser)
+> sends the same fields on Windows; the Linux daemon only sends usage.
 >
 > No licence, here or upstream. Hermann explains why in
 > [his README](https://github.com/HermannBjorgvin/Clawdmeter#licensing-gray-area-warning).
@@ -88,8 +91,9 @@ While the splash is up, the middle (PWR) button cycles animations. **Hold the po
 
 ## What Clawd shows (this fork)
 
-Once the Claude Code hooks are installed (`install-mac.sh` offers them; the
-daemon's `activity = auto` default then switches on), they tell the device
+Once the Claude Code hooks are installed (`install-mac.sh` and
+`install-windows.ps1` offer them; the daemon's `activity = auto` default then
+switches on), they tell the device
 what each session is doing, and Clawd acts it out — on the splash,
 in the corner of the usage screen (`corner_buddy = on`), and in the footer.
 With several sessions open, the most urgent one wins: limit, then permission,
@@ -264,6 +268,8 @@ pio run -d firmware -e waveshare_amoled_216 -t upload --upload-port COM5   # use
 
 Run `pio run -d firmware` with no env to see the available board envs.
 
+If the very first build stops at `Failed to install Python dependencies`, the pioarduino platform tried to reinstall its own `platformio` into the running `pio.exe`'s environment, which Windows does not allow. Install the packages listed in `python_deps` (`%USERPROFILE%\.platformio\platforms\espressif32\builder\penv_setup.py`) into that environment by hand with its `uv.exe pip install --python=<penv>\Scripts\python.exe …`, then build again.
+
 ### Pair the device
 
 The device is a bonded BLE HID keyboard, so pair it once: **Settings → Bluetooth & devices → Add device → Bluetooth**, then select "Clawdmeter XXXX". Pairing is **required** — it enables the physical buttons and keeps a persistent connection (the device keeps showing your last-synced usage even after the daemon quits). To undo, use **Remove device** (this disables the buttons).
@@ -276,7 +282,9 @@ From the repo root in PowerShell:
 powershell -ExecutionPolicy Bypass -File install-windows.ps1
 ```
 
-This creates a venv, installs `bleak`/`httpx`/`pystray`/`Pillow` from the in-repo requirements (no internet downloads), registers a per-user login-autostart entry (`HKCU\…\Run`, no admin needed), and launches the tray app headlessly (no console window).
+This creates a venv, installs `bleak`/`httpx`/`pystray`/`Pillow` from the in-repo requirements (no internet downloads), offers the Claude Code hooks that let the device show what Claude is doing (default yes — see [What Clawd shows](#what-clawd-shows-this-fork)), registers a per-user login-autostart entry (`HKCU\…\Run`, no admin needed), and launches the tray app headlessly (no console window).
+
+The hooks run `clawd_activity.py` through the base interpreter's `pythonw.exe`, so no console window flashes on each tool call; they write one small file per session to `%LOCALAPPDATA%\Clawdmeter\activity`. Remove them with `.venv\Scripts\python.exe daemon\clawd_activity.py --uninstall`.
 
 ### Run manually instead (optional)
 
@@ -319,7 +327,7 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Clawdmeter /f
 4. The daemon connects to the ESP32 over BLE and writes a JSON payload to the GATT RX characteristic.
 5. The firmware parses it and updates the LVGL dashboard.
 6. The firmware also tracks the rate of change of session % over a 5-minute window and picks splash animations from the matching mood group.
-   With the Claude Code hooks installed (macOS daemon, this fork), they report what each session is doing instead, and the daemon sends that as the animation name — thinking, writing, waiting for your permission, done, out of quota.
+   With the Claude Code hooks installed (macOS and Windows daemons, this fork), they report what each session is doing instead, and the daemon sends that as the animation name — thinking, writing, waiting for your permission, done, out of quota.
 7. The two side buttons are independent of all of this — they send Space and Shift+Tab as BLE HID keyboard input to the paired host directly.
 
 ## Physical buttons
