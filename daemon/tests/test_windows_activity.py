@@ -10,12 +10,6 @@ from daemon import clawd_activity as ca
 import daemon.claude_usage_daemon_windows as mod
 
 
-@pytest.fixture(autouse=True)
-def _no_file_log(monkeypatch):
-    # Keep test traffic out of the real %LOCALAPPDATA%\Clawdmeter\daemon.log.
-    monkeypatch.setattr(mod, "_FILE_LOGGER", None)
-
-
 def test_payload_fields_follow_config(tmp_path, monkeypatch):
     cfg = tmp_path / "config"
     monkeypatch.setattr(mod, "CONFIG_FILE", cfg)
