@@ -103,7 +103,7 @@ then working, then done.
 | :---: | --- | --- | --- |
 | <img src="assets/states/laptop.gif" width="150" alt="Clawd typing on a laptop"> | **Working** | Claude runs a tool (Bash, search, …) or edits a file (Edit, Write) | rotating verbs |
 | <img src="assets/states/book.gif" width="150" alt="Clawd reading a book with glasses on"> | **Thinking** | you sent a prompt, or a tool just finished and Claude is deciding what's next | rotating verbs |
-| <img src="assets/states/pointing.gif" width="150" alt="Clawd pointing"> | **Needs you** | Claude is waiting for your permission to run a tool | **Needs you** (amber) |
+| <img src="assets/states/pointing.gif" width="150" alt="Clawd pointing"> | **Needs you** | Claude is waiting for your permission to run a tool, or has asked you a question | **Needs you** (amber) |
 | <img src="assets/states/jumping_happy.gif" width="150" alt="Clawd hopping with happy eyes"> | **Your turn** | Claude finished its reply — for 3 minutes, then idle | **Your turn** (green) |
 | <img src="assets/states/still.gif" width="150" alt="Clawd standing still"> | **Out of quota** | the 5-hour or the weekly limit is at 100 % | **Limit reached** (red) |
 | <img src="assets/states/cloud_still.gif" width="150" alt="Clawd resting on a cloud"> | **Sleeping** | no Claude Code activity for 15 minutes | **Idle** (gray) |

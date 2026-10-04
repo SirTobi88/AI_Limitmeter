@@ -18,6 +18,9 @@ def hook(d: Path, sid: str, event: str, now: float, **extra) -> None:
     ("PreToolUse", {"tool_name": "Bash"}, "work coding"),
     ("PreToolUse", {"tool_name": "Edit"}, "write"),
     ("PostToolUse", {"tool_name": "Edit"}, "work think"),
+    ("PostToolUseFailure", {"tool_name": "Bash"}, "work think"),
+    ("PermissionRequest", {"tool_name": "Bash"}, "allow"),
+    ("PermissionRequest", {"tool_name": "AskUserQuestion"}, "allow"),
     ("Stop", {}, "done"),
     ("Notification", {"notification_type": "permission_prompt"}, "allow"),
     ("Notification", {"message": "Claude needs your permission to use Bash"}, "allow"),
@@ -93,6 +96,8 @@ def test_install_preserves_foreign_hooks_and_uninstall_restores(tmp_path):
         ours = [h for g in d["hooks"][ev] for h in g["hooks"] if ca._is_ours(h)]
         assert len(ours) == 1, ev
     assert d["hooks"]["PreToolUse"][0]["matcher"] == "*"
+    assert d["hooks"]["PermissionRequest"][0]["matcher"] == "*"
+    assert "matcher" not in d["hooks"]["Notification"][0]
     assert {"type": "command", "command": "say done"} in d["hooks"]["Stop"][0]["hooks"]
 
     ca.set_installed(False, settings)

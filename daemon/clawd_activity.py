@@ -44,8 +44,10 @@ HOOK_MARK = "clawd_activity.py"
 # Events the hook is registered for. Tool events get a "*" matcher; the rest
 # take none.
 HOOK_EVENTS = ("UserPromptSubmit", "PreToolUse", "PostToolUse",
+               "PostToolUseFailure", "PermissionRequest",
                "Notification", "Stop", "SessionEnd")
-_TOOL_EVENTS = ("PreToolUse", "PostToolUse")
+_TOOL_EVENTS = ("PreToolUse", "PostToolUse", "PostToolUseFailure",
+                "PermissionRequest")
 
 # Tools whose job is writing files get the "write" animation; every other tool
 # call is "work coding".
@@ -74,8 +76,14 @@ def _state_for(event: dict) -> str | None:
         return "work think"
     if name == "PreToolUse":
         return "write" if event.get("tool_name") in _WRITE_TOOLS else "work coding"
-    if name == "PostToolUse":
+    if name in ("PostToolUse", "PostToolUseFailure"):
         return "work think"
+    if name == "PermissionRequest":
+        # Fires the moment a permission dialog -- or a question to you --
+        # opens. The permission_prompt Notification below says the same, but
+        # the desktop app sends it ~6 s later, which left the device showing
+        # busy Clawd while Claude was already waiting on you.
+        return "allow"
     if name == "Stop":
         return "done"
     if name == "Notification":
