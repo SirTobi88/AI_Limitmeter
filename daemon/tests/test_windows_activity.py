@@ -181,12 +181,15 @@ def test_dead_token_stops_activity_resends(tmp_path, monkeypatch):
 
 # ---- clawd_activity on Windows -------------------------------------------
 
-def test_activity_dir_lives_next_to_the_windows_config(tmp_path, monkeypatch):
+def test_activity_dir_is_outside_appdata(tmp_path, monkeypatch):
+    """The Claude desktop app (MSIX) redirects AppData writes of everything it
+    starts, hooks included; a daemon started outside it would never see them."""
     monkeypatch.setattr(ca.sys, "platform", "win32")
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    assert ca._default_activity_dir() == tmp_path / "Clawdmeter" / "activity"
-    # ...which is the dir the daemon reads its config from, too.
-    assert mod.CONFIG_FILE.parent.name == "Clawdmeter"
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    d = ca._default_activity_dir()
+    assert d == Path.home() / ".config" / "claude-usage-monitor" / "activity"
+    assert "AppData" not in d.parts
 
 
 def test_hook_command_uses_windowless_python(tmp_path, monkeypatch):
