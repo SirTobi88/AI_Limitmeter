@@ -139,6 +139,13 @@ static bool parse_json(const char* json, UsageData* out) {
     out->screen_mode = doc["sm"] | 0;
     out->clock_epoch = doc["t"] | 0L;
     out->clock_fmt = doc["tf"] | 24;
+    JsonObjectConst cx = doc["cx"];
+    out->codex.valid = !cx.isNull();
+    out->codex.session_pct = cx["s"] | 0;
+    out->codex.session_reset_mins = cx["sr"] | -1;
+    out->codex.weekly_pct = cx["w"] | 0;
+    out->codex.weekly_reset_mins = cx["wr"] | -1;
+    strlcpy(out->codex.plan, cx["pl"] | "", sizeof(out->codex.plan));
     out->ok = doc["ok"].as<bool>();
     out->valid = true;
     return true;

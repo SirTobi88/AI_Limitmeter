@@ -4,7 +4,9 @@
 
 enum screen_t {
     SCREEN_SPLASH,
-    SCREEN_USAGE,
+    SCREEN_USAGE,     // combo: Claude and Codex side by side (default data screen)
+    SCREEN_CLAUDE,    // Claude's two windows, full size
+    SCREEN_CODEX,     // Codex's two windows, full size
     SCREEN_COUNT,
 };
 

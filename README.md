@@ -1,3 +1,34 @@
+# AI_Limitmeter
+
+Claude Code **and OpenAI Codex** limits on one desk display. This is a fork of
+[Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter) (via
+[SirTobi88/Clawdmeter](https://github.com/SirTobi88/Clawdmeter)) that adds:
+
+- **A combo screen** — the default data view: Claude's and Codex's 5-hour and
+  weekly windows as two compact panels, each row with bar, percentage and
+  time to reset. A provider without live numbers shows dashes and "no data"
+  instead of a stale reading.
+- **Swipe left / right** to turn the pages: combo → Claude → Codex → combo.
+  The detail pages are the familiar big gauges (rings on the round Knob-1.8).
+  The Codex page is skipped while Codex has no data; the dots under the
+  panels show where you are. A tap still flips to the Clawd animation.
+- **Codex limits from Codex's own logs.** The macOS and Windows daemons read
+  the newest `rate_limits` event from `~/.codex/sessions` (or `$CODEX_HOME`) —
+  no credentials, no network, no unofficial API — and send it as `cx`
+  alongside Claude's numbers, re-checking every 10 s. The numbers are as fresh
+  as your last Codex turn; a window whose reset time has passed reads as 0 %.
+  Try it: `python3 daemon/codex_limits.py`. The Linux bash daemon does not
+  send Codex data.
+
+| Combo (480×480, simulator) | Combo (240×240, simulator) | Codex detail |
+| :---: | :---: | :---: |
+| ![Combo](screenshots/sim/combo_480.png) | ![Combo small](screenshots/sim/combo_240.png) | ![Codex](screenshots/sim/codex_480.png) |
+
+Devices still advertise as `Clawdmeter XXXX`, so existing pairings and
+daemon configs keep working.
+
+---
+
 > [!IMPORTANT]
 > ## This is a fork
 >
@@ -370,6 +401,7 @@ Optional fields (all may be omitted):
 | `a`  | animation name to play, e.g. `"work coding"`, `"allow"`, `"done"`, `"limit"` (this fork; `""` = device picks by usage rate) |
 | `sm` | display mode: `0` usage, `1` Clawd, `2` Clawd briefly on each state change (this fork) |
 | `ua` | `true` = animate the buddy in the usage screen's corner (this fork) |
+| `cx` | Codex's limits (AI_Limitmeter): `{"s":49,"sr":123,"w":91,"wr":5935,"pl":"plus"}` — 5h %, minutes to its reset, weekly %, minutes to its reset, plan. Sent with `ok:false` too, so Codex stays live while the Claude token is dead |
 
 ## Development
 

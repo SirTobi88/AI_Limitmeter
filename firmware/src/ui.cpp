@@ -77,6 +77,18 @@ struct Layout {
     int16_t r_s_label_y, r_s_pct_y, r_s_reset_y;
     int16_t r_w_row_y, r_w_reset_y;
 
+    // Combo screen: one panel per provider, each a name row and two compact
+    // gauge rows ("5h" / "7d": label, bar, number, reset). Row offsets are
+    // inside the panel's padding. The label / number / reset columns are
+    // measured on the widest text they can show; the bar takes what is left.
+    int16_t combo_x, combo_y, combo_w, combo_h, combo_gap;
+    int16_t combo_pad_x, combo_pad_y;
+    int16_t combo_row1_y, combo_row2_y;
+    int16_t combo_bar_h;
+    int16_t combo_col_gap;
+    const lv_font_t* combo_head_font;  // provider name
+    const lv_font_t* combo_font;       // row text
+
     // Pairing hint / idle screen
     int16_t pair_y1, pair_y2, pair_y3;
     int16_t idle_px;                 // sleeping-creature size on the idle screen
@@ -145,6 +157,12 @@ static void compute_layout(const BoardCaps& c) {
         L.bt_device_font   = &font_styrene_28;
         L.bt_credit_1_font = &font_styrene_24;
         L.bt_credit_2_font = &font_styrene_20;
+        L.combo_head_font = &font_styrene_28;
+        L.combo_font      = &font_styrene_24;
+        L.combo_row1_y = 46;
+        L.combo_row2_y = 88;
+        L.combo_bar_h = 16;
+        L.combo_col_gap = 10;
     } else if (c.height >= 300) {
         // Compact layout — tuned for 368x448 (AMOLED-1.8).
         L.content_y = 85;
@@ -159,6 +177,12 @@ static void compute_layout(const BoardCaps& c) {
         L.bt_device_font   = &font_styrene_20;
         L.bt_credit_1_font = &font_styrene_16;
         L.bt_credit_2_font = &font_styrene_14;
+        L.combo_head_font = &font_styrene_24;
+        L.combo_font      = &font_styrene_20;
+        L.combo_row1_y = 38;
+        L.combo_row2_y = 72;
+        L.combo_bar_h = 12;
+        L.combo_col_gap = 8;
     } else {
         // Small layout — tuned for 240x240 (LCD-1.54 and similar square TFTs).
         // Everything shrinks: fonts two steps down, panels ~half height, and
@@ -201,7 +225,22 @@ static void compute_layout(const BoardCaps& c) {
         L.bt_device_font   = &font_styrene_14;
         L.bt_credit_1_font = &font_styrene_12;
         L.bt_credit_2_font = &font_styrene_12;
+        L.combo_head_font = &font_styrene_14;
+        L.combo_font      = &font_styrene_14;
+        L.combo_row1_y = 20;
+        L.combo_row2_y = 39;
+        L.combo_bar_h = 8;
+        L.combo_col_gap = 5;
     }
+
+    // The combo panels take the place of the two detail panels.
+    L.combo_x = L.margin;
+    L.combo_y = L.content_y;
+    L.combo_w = c.width - 2 * L.margin;
+    L.combo_h = L.usage_panel_h;
+    L.combo_gap = L.usage_panel_gap;
+    L.combo_pad_x = L.panel_pad_x;
+    L.combo_pad_y = L.panel_pad_y;
 
     if (c.is_round) {
         // Round layout — tuned for 360x360 (Knob-1.8). Applied on top of the
@@ -249,6 +288,21 @@ static void compute_layout(const BoardCaps& c) {
         L.idle_px = 160;
         L.bt_status_font = &font_styrene_28;
         L.bt_device_font = &font_styrene_20;
+        // Combo: two panels stacked in the middle of the circle, narrow
+        // enough that their corners stay well inside the bezel.
+        L.combo_w = 260;
+        L.combo_x = (c.width - L.combo_w) / 2;
+        L.combo_y = 108;
+        L.combo_h = 80;
+        L.combo_gap = 8;
+        L.combo_pad_x = 10;
+        L.combo_pad_y = 8;
+        L.combo_head_font = &font_styrene_16;
+        L.combo_font      = &font_styrene_16;
+        L.combo_row1_y = 22;
+        L.combo_row2_y = 43;
+        L.combo_bar_h = 8;
+        L.combo_col_gap = 6;
     }
 
     L.content_w = L.scr_w - 2 * L.margin;
@@ -296,6 +350,36 @@ static lv_obj_t* lbl_spending_desc = nullptr;     // "of your monthly budget"
 static lv_obj_t* lbl_spending_status = nullptr;   // "Under pace" / "On pace" / "Over pace"
 static lv_obj_t* lbl_anim;      // status line: connection state + whimsical idle
 
+// ---- Codex detail + combo screen ----
+// The three data screens share usage_container (title, status line, pairing
+// hint and idle view); each brings its own group, and update_view_state()
+// shows the one that belongs to the current page.
+// One provider's two windows as full-size gauges: bar panels, or rings on
+// round boards. The Claude view fills the single-name globals above from one.
+struct GaugePair {
+    lv_obj_t *panel_s, *pct_s, *label_s, *bar_s, *reset_s;
+    lv_obj_t *panel_w, *pct_w, *label_w, *bar_w, *reset_w;
+};
+static lv_obj_t* codex_group = nullptr;   // Codex detail
+static GaugePair codex_gp = {};
+static lv_obj_t* combo_group = nullptr;   // combo: both providers at once
+struct ComboBlock {
+    lv_obj_t* panel;
+    lv_obj_t* name;      // "Claude" / "Codex"
+    lv_obj_t* note;      // plan, or "no data"
+    lv_obj_t* label[2];  // "5h" / "7d"
+    lv_obj_t* bar[2];
+    lv_obj_t* pct[2];
+    lv_obj_t* reset[2];
+};
+static ComboBlock combo_claude = {}, combo_codex = {};
+static lv_obj_t* page_dots[3] = {};       // which of the three pages is up
+static int16_t   page_dots_y = -1;        // -1 = no room for them on this layout
+static UsageData claude_data = {};        // last live Claude reading, for the combo
+static CodexData codex_data = {};         // last Codex reading
+static uint32_t  last_codex_ms = 0;       // lv_tick when it landed
+static int       fresh_mask = -1;         // claude | codex << 1, as last rendered
+
 // ---- Battery indicator (shared, on top) ----
 static lv_obj_t* battery_img;
 static lv_obj_t* logo_img;
@@ -330,9 +414,19 @@ static bool      data_ok = true;        // last payload's ok flag; a {"ok":false
 static int       view_state = -1;       // -1 unknown / 0 pair / 1 idle / 2 usage
 static const uint32_t DATA_FRESH_MS = 90000;  // usage counts as "live" within this window (daemon sends ~60s)
 
+static bool claude_fresh(void) {
+    return data_received && data_ok && (lv_tick_get() - last_data_ms) < DATA_FRESH_MS;
+}
+// Codex numbers ride on every payload, the "No data" beats included, so they
+// stay live while the Claude token is dead.
+static bool codex_fresh(void) {
+    return codex_data.valid && (lv_tick_get() - last_codex_ms) < DATA_FRESH_MS;
+}
+
 // ---- Shared ----
 static lv_image_dsc_t logo_dsc;
 static screen_t current_screen = SCREEN_USAGE;
+static screen_t prev_non_splash_screen = SCREEN_USAGE;   // the data page a tap returns to
 static bool     s_ble_connected = false;   // cached BLE connection state
 static uint32_t connected_at_ms = 0;       // when we last entered CONNECTED ("Connected" dwell)
 
@@ -396,6 +490,14 @@ static lv_color_t pct_color(float pct) {
     return L.gauge_ok;
 }
 
+// The combo rows' short form: "45m", "4h05m", "6d23h"; "" when unknown.
+static void format_reset_short(int mins, char* buf, size_t len) {
+    if (mins < 0)         buf[0] = '\0';
+    else if (mins < 60)   snprintf(buf, len, "%dm", mins);
+    else if (mins < 1440) snprintf(buf, len, "%dh%02dm", mins / 60, mins % 60);
+    else                  snprintf(buf, len, "%dd%dh", mins / 1440, (mins % 1440) / 60);
+}
+
 static void format_reset_time(int mins, char* buf, size_t len) {
     if (mins < 0) {
         snprintf(buf, len, "---");
@@ -430,6 +532,60 @@ static bool               holding = false;
 
 void ui_set_touch_keys(const UiTouchKeys* keys) { touch_keys = keys; }
 
+// ---- Swipe between the data pages ----
+// Left / right turns the pages in a circle: combo -> Claude -> Codex -> combo
+// (left = forward). The Codex page is skipped while Codex has no numbers. On
+// the splash a swipe does nothing -- a tap is what leaves it.
+//
+// LVGL still sends CLICKED (and on the touch-keys path SHORT_CLICKED) when the
+// finger lifts after a gesture, so a swipe would also toggle the splash; the
+// flag swallows that one release. Reset on every new press.
+static bool swipe_consumed = false;
+
+static void swipe_page(int step) {
+    if (current_screen == SCREEN_SPLASH) return;
+    static const screen_t order[] = { SCREEN_USAGE, SCREEN_CLAUDE, SCREEN_CODEX };
+    const int n = 3;
+    int i = 0;
+    while (i < n && order[i] != current_screen) i++;
+    if (i == n) i = 0;
+    for (int tries = 0; tries < n; tries++) {
+        i = (i + step + n) % n;
+        if (order[i] == SCREEN_CODEX && !codex_fresh()) continue;
+        break;
+    }
+    auto_splash_until = 0;   // whoever turns pages by hand stays there
+    if (order[i] != current_screen) ui_show_screen(order[i]);
+}
+
+// True when the event was a gesture (handled here).
+static bool handle_swipe_event(lv_event_t* e) {
+    const lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_PRESSED) {
+        swipe_consumed = false;
+        return false;
+    }
+    if (code != LV_EVENT_GESTURE) return false;
+    swipe_consumed = true;
+    lv_indev_t* indev = lv_indev_active();
+    if (!indev) return true;
+    const lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    if (dir == LV_DIR_LEFT)       swipe_page(+1);
+    else if (dir == LV_DIR_RIGHT) swipe_page(-1);
+    return true;
+}
+
+// Plain-tap boards: tap toggles the splash, unless the press was a swipe.
+static void screen_event_cb(lv_event_t* e) {
+    if (handle_swipe_event(e)) return;
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    if (swipe_consumed) {
+        swipe_consumed = false;
+        return;
+    }
+    global_click_cb(e);
+}
+
 static void tap_timer_cb(lv_timer_t* t) {
     (void)t;
     tap_timer = nullptr;   // one-shot; LVGL deletes it after this call
@@ -437,11 +593,13 @@ static void tap_timer_cb(lv_timer_t* t) {
 }
 
 static void touch_key_cb(lv_event_t* e) {
+    if (handle_swipe_event(e)) return;
     switch (lv_event_get_code(e)) {
     case LV_EVENT_PRESSED:
         press_start_ms = lv_tick_get();
         break;
     case LV_EVENT_SHORT_CLICKED:
+        if (swipe_consumed) break;             // the release after a swipe
         if (tap_timer) {                       // second tap inside the window
             lv_timer_delete(tap_timer);
             tap_timer = nullptr;
@@ -452,6 +610,7 @@ static void touch_key_cb(lv_event_t* e) {
         }
         break;
     case LV_EVENT_LONG_PRESSED:
+        if (swipe_consumed) break;             // a slow swipe is not a hold
         holding = true;
         if (touch_keys && touch_keys->hold_start) touch_keys->hold_start();
         break;
@@ -475,10 +634,14 @@ static void touch_key_cb(lv_event_t* e) {
 }
 
 static void attach_touch_actions(lv_obj_t* obj) {
+    // Gestures from the panels and labels inside stop here. Every LVGL child
+    // passes gestures up by default, so without this they would sail past
+    // the container to the screen object and never reach the handler.
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE);
     if (board_caps().touch_keys) {
         lv_obj_add_event_cb(obj, touch_key_cb, LV_EVENT_ALL, NULL);
     } else {
-        lv_obj_add_event_cb(obj, global_click_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(obj, screen_event_cb, LV_EVENT_ALL, NULL);
     }
 }
 
@@ -682,40 +845,35 @@ static lv_obj_t* make_centered_label(lv_obj_t* parent, const char* text,
     return lbl;
 }
 
-// Round counterpart of the two usage panels. Fills the same widget pointers
-// the bar layout does, so ui_update() drives both without knowing which is
-// on screen: panel_session / panel_weekly become transparent layers, the bars
-// become rings, the pills become plain captions.
-static void build_round_usage(lv_obj_t* parent) {
-    panel_session = make_layer(parent);
-    panel_weekly  = make_layer(parent);
+// One provider's two windows at full size: two bar panels, or on round
+// panels two concentric rings with the numbers stacked in the middle (the
+// panels become transparent layers, the pills plain captions). Claude's and
+// Codex's detail screens are both built from this.
+static void build_gauge_pair(lv_obj_t* parent, GaugePair* g,
+                             const char* cap_s, const char* cap_w) {
+    if (!L.round) {
+        g->panel_s = make_usage_panel(parent, L.content_y, cap_s,
+                                      &g->pct_s, &g->label_s, &g->bar_s, &g->reset_s);
+        g->panel_w = make_usage_panel(parent,
+                                      L.content_y + L.usage_panel_h + L.usage_panel_gap, cap_w,
+                                      &g->pct_w, &g->label_w, &g->bar_w, &g->reset_w);
+        return;
+    }
 
-    bar_session = make_ring(panel_session, L.ring_d);
-    bar_weekly  = make_ring(panel_weekly, L.ring_d - 2 * (L.ring_w + L.ring_gap));
-    add_ring_ticks(panel_weekly);   // last layer, so the notches cut both rings
+    g->panel_s = make_layer(parent);
+    g->panel_w = make_layer(parent);
 
-    lbl_session_label = make_centered_label(panel_session, "Current", L.pill_font, COL_DIM, L.r_s_label_y);
-    lbl_session_pct   = make_centered_label(panel_session, "---%", L.pct_font, COL_TEXT, L.r_s_pct_y);
-    lbl_session_reset = make_centered_label(panel_session, "---", L.reset_font, COL_DIM, L.r_s_reset_y);
+    g->bar_s = make_ring(g->panel_s, L.ring_d);
+    g->bar_w = make_ring(g->panel_w, L.ring_d - 2 * (L.ring_w + L.ring_gap));
+    add_ring_ticks(g->panel_w);   // last layer, so the notches cut both rings
 
-    // Enterprise-only overlays — hidden until enterprise data arrives.
-    lbl_session_pct_sym = lv_label_create(panel_session);
-    lv_label_set_text(lbl_session_pct_sym, "%");
-    lv_obj_set_style_text_font(lbl_session_pct_sym, L.reset_font, 0);
-    lv_obj_set_style_text_color(lbl_session_pct_sym, COL_TEXT, 0);
-    lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
-
-    lbl_spending_desc = make_centered_label(panel_session, "of your monthly budget",
-                                            L.reset_font, COL_DIM, L.r_s_reset_y);
-    lv_obj_add_flag(lbl_spending_desc, LV_OBJ_FLAG_HIDDEN);
-
-    lbl_spending_status = make_centered_label(panel_session, "", L.pace_font, COL_DIM,
-                                              L.r_s_reset_y + 20);
-    lv_obj_add_flag(lbl_spending_status, LV_OBJ_FLAG_HIDDEN);
+    g->label_s = make_centered_label(g->panel_s, cap_s, L.pill_font, COL_DIM, L.r_s_label_y);
+    g->pct_s   = make_centered_label(g->panel_s, "---%", L.pct_font, COL_TEXT, L.r_s_pct_y);
+    g->reset_s = make_centered_label(g->panel_s, "---", L.reset_font, COL_DIM, L.r_s_reset_y);
 
     // Weekly caption and number share one row, bottom-aligned so the two
     // font sizes read as one line.
-    lv_obj_t* row = lv_obj_create(panel_weekly);
+    lv_obj_t* row = lv_obj_create(g->panel_w);
     lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(row, 0, 0);
@@ -727,18 +885,231 @@ static void build_round_usage(lv_obj_t* parent) {
     lv_obj_add_flag(row, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_align(row, LV_ALIGN_CENTER, 0, L.r_w_row_y);
 
-    lbl_weekly_label = lv_label_create(row);
-    lv_label_set_text(lbl_weekly_label, "Weekly");
-    lv_obj_set_style_text_font(lbl_weekly_label, L.pill_font, 0);
-    lv_obj_set_style_text_color(lbl_weekly_label, COL_DIM, 0);
-    lv_obj_set_style_pad_bottom(lbl_weekly_label, 3, 0);   // baseline, not bottom edge
+    g->label_w = lv_label_create(row);
+    lv_label_set_text(g->label_w, cap_w);
+    lv_obj_set_style_text_font(g->label_w, L.pill_font, 0);
+    lv_obj_set_style_text_color(g->label_w, COL_DIM, 0);
+    lv_obj_set_style_pad_bottom(g->label_w, 3, 0);   // baseline, not bottom edge
 
-    lbl_weekly_pct = lv_label_create(row);
-    lv_label_set_text(lbl_weekly_pct, "---%");
-    lv_obj_set_style_text_font(lbl_weekly_pct, L.week_pct_font, 0);
-    lv_obj_set_style_text_color(lbl_weekly_pct, COL_TEXT, 0);
+    g->pct_w = lv_label_create(row);
+    lv_label_set_text(g->pct_w, "---%");
+    lv_obj_set_style_text_font(g->pct_w, L.week_pct_font, 0);
+    lv_obj_set_style_text_color(g->pct_w, COL_TEXT, 0);
 
-    lbl_weekly_reset = make_centered_label(panel_weekly, "---", L.reset_font, COL_DIM, L.r_w_reset_y);
+    g->reset_w = make_centered_label(g->panel_w, "---", L.reset_font, COL_DIM, L.r_w_reset_y);
+}
+
+// Plain 5h / weekly numbers into a gauge pair (Codex; Claude's own view also
+// knows the Enterprise variant and keeps its code in ui_update()).
+static void fill_gauge_pair(const GaugePair* g, int s_pct, int s_reset, int w_pct, int w_reset) {
+    char buf[48];
+    lv_label_set_text_fmt(g->pct_s, "%d%%", s_pct);
+    set_gauge(g->bar_s, s_pct, pct_color((float)s_pct));
+    format_reset_time(s_reset, buf, sizeof(buf));
+    lv_label_set_text(g->reset_s, buf);
+    lv_label_set_text_fmt(g->pct_w, "%d%%", w_pct);
+    set_gauge(g->bar_w, w_pct, pct_color((float)w_pct));
+    format_reset_time(w_reset, buf, sizeof(buf));
+    lv_label_set_text(g->reset_w, buf);
+}
+
+// ---- Combo screen ----
+
+static lv_obj_t* make_combo_label(lv_obj_t* parent, const char* text, const lv_font_t* font,
+                                  lv_color_t color) {
+    lv_obj_t* lbl = lv_label_create(parent);
+    lv_label_set_text(lbl, text);
+    lv_obj_set_style_text_font(lbl, font, 0);
+    lv_obj_set_style_text_color(lbl, color, 0);
+    return lbl;
+}
+
+// Advance width of a short ASCII string, side bearings included.
+static int text_w(const lv_font_t* font, const char* txt) {
+    int w = 0;
+    for (const char* p = txt; *p; p++)
+        w += lv_font_get_glyph_width(font, (uint32_t)p[0], (uint32_t)p[1]);
+    return w;
+}
+
+static int max_text_w(const lv_font_t* font, const char* const* txts, int n) {
+    int w = 0;
+    for (int i = 0; i < n; i++) {
+        const int t = text_w(font, txts[i]);
+        if (t > w) w = t;
+    }
+    return w;
+}
+
+static void build_combo_block(lv_obj_t* parent, int y, const char* name, ComboBlock* b) {
+    b->panel = make_panel(parent, L.combo_x, y, L.combo_w, L.combo_h);
+    lv_obj_set_style_pad_left(b->panel, L.combo_pad_x, 0);
+    lv_obj_set_style_pad_right(b->panel, L.combo_pad_x, 0);
+    lv_obj_set_style_pad_top(b->panel, L.combo_pad_y, 0);
+    lv_obj_set_style_pad_bottom(b->panel, L.combo_pad_y, 0);
+
+    b->name = make_combo_label(b->panel, name, L.combo_head_font, COL_TEXT);
+    lv_obj_set_pos(b->name, 0, 0);
+    // The note sits on the name's baseline, right-aligned.
+    const int head_h = lv_font_get_line_height(L.combo_head_font);
+    const int line_h = lv_font_get_line_height(L.combo_font);
+    b->note = make_combo_label(b->panel, "", L.combo_font, COL_DIM);
+    lv_obj_align(b->note, LV_ALIGN_TOP_RIGHT, 0, head_h - line_h);
+
+    // Columns sized on the widest thing each can show ("$" is Enterprise's
+    // spending row; the reset slot also holds its date, e.g. "Aug 15").
+    static const char* const labels[] = { "5h", "7d", "$" };
+    static const char* const pcts[]   = { "100%" };
+    static const char* const resets[] = { "23h59m", "6d23h", "Sep 30" };
+    const int label_w = max_text_w(L.combo_font, labels, 3);
+    const int pct_w   = max_text_w(L.combo_font, pcts, 1) + 2;
+    const int reset_w = max_text_w(L.combo_font, resets, 3) + 2;
+    const int inner_w = L.combo_w - 2 * L.combo_pad_x;
+    const int bar_x   = label_w + L.combo_col_gap;
+    const int bar_w   = inner_w - bar_x - 2 * L.combo_col_gap - pct_w - reset_w;
+    for (int i = 0; i < 2; i++) {
+        const int ry = i ? L.combo_row2_y : L.combo_row1_y;
+        b->label[i] = make_combo_label(b->panel, i ? "7d" : "5h", L.combo_font, COL_DIM);
+        lv_obj_set_pos(b->label[i], 0, ry);
+
+        b->bar[i] = make_bar(b->panel, bar_x, ry + (line_h - L.combo_bar_h) / 2, bar_w, L.combo_bar_h);
+        lv_obj_set_style_radius(b->bar[i], L.combo_bar_h / 2, LV_PART_MAIN);
+        lv_obj_set_style_radius(b->bar[i], L.combo_bar_h / 2, LV_PART_INDICATOR);
+        lv_obj_add_flag(b->bar[i], LV_OBJ_FLAG_EVENT_BUBBLE);
+
+        b->pct[i] = make_combo_label(b->panel, "--", L.combo_font, COL_TEXT);
+        lv_obj_set_width(b->pct[i], pct_w);
+        lv_obj_set_style_text_align(b->pct[i], LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_pos(b->pct[i], bar_x + bar_w + L.combo_col_gap, ry);
+
+        b->reset[i] = make_combo_label(b->panel, "", L.combo_font, COL_DIM);
+        lv_obj_set_width(b->reset[i], reset_w);
+        lv_obj_set_style_text_align(b->reset[i], LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_pos(b->reset[i], inner_w - reset_w, ry);
+    }
+}
+
+// Same warning levels as the detail bars, but always green below them --
+// the round layout's detail rings are orange, these stay bars everywhere.
+static lv_color_t combo_color(int pct) {
+    if (pct >= 80) return COL_RED;
+    if (pct >= 50) return COL_AMBER;
+    return COL_GREEN;
+}
+
+// pct < 0 = no number for this row: dashes, empty bar.
+static void set_combo_row(const ComboBlock* b, int i, int pct, const char* reset) {
+    if (pct < 0) {
+        lv_label_set_text(b->pct[i], "--");
+        lv_bar_set_value(b->bar[i], 0, LV_ANIM_OFF);
+    } else {
+        lv_label_set_text_fmt(b->pct[i], "%d%%", pct);
+        lv_bar_set_value(b->bar[i], pct, LV_ANIM_ON);
+        lv_obj_set_style_bg_color(b->bar[i], combo_color(pct), LV_PART_INDICATOR);
+    }
+    lv_label_set_text(b->reset[i], reset);
+}
+
+static void set_combo_row_visible(const ComboBlock* b, int i, bool on) {
+    lv_obj_t* parts[] = { b->label[i], b->bar[i], b->pct[i], b->reset[i] };
+    for (lv_obj_t* o : parts) {
+        if (on) lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
+        else    lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+// Redraw both combo panels from the last readings. A provider without live
+// numbers keeps its panel, with dashes and "no data", so the screen never
+// pretends a stale reading is current.
+static void render_combo(void) {
+    if (!combo_group) return;
+    char buf[16];
+
+    if (claude_fresh()) {
+        const UsageData* d = &claude_data;
+        lv_label_set_text(combo_claude.note, "");
+        if (d->enterprise) {
+            // One spending number instead of two windows; the reset date
+            // takes the reset slot.
+            lv_label_set_text(combo_claude.label[0], "$");
+            set_combo_row(&combo_claude, 0, (int)(d->session_pct + 0.5f), d->reset_date);
+            set_combo_row_visible(&combo_claude, 1, false);
+        } else {
+            lv_label_set_text(combo_claude.label[0], "5h");
+            format_reset_short(d->session_reset_mins, buf, sizeof(buf));
+            set_combo_row(&combo_claude, 0, (int)(d->session_pct + 0.5f), buf);
+            set_combo_row_visible(&combo_claude, 1, true);
+            format_reset_short(d->weekly_reset_mins, buf, sizeof(buf));
+            set_combo_row(&combo_claude, 1, (int)(d->weekly_pct + 0.5f), buf);
+        }
+    } else {
+        lv_label_set_text(combo_claude.note, "no data");
+        lv_label_set_text(combo_claude.label[0], "5h");
+        set_combo_row_visible(&combo_claude, 1, true);
+        set_combo_row(&combo_claude, 0, -1, "");
+        set_combo_row(&combo_claude, 1, -1, "");
+    }
+
+    if (codex_fresh()) {
+        const CodexData* c = &codex_data;
+        lv_label_set_text(combo_codex.note, c->plan);
+        format_reset_short(c->session_reset_mins, buf, sizeof(buf));
+        set_combo_row(&combo_codex, 0, c->session_pct, buf);
+        format_reset_short(c->weekly_reset_mins, buf, sizeof(buf));
+        set_combo_row(&combo_codex, 1, c->weekly_pct, buf);
+    } else {
+        lv_label_set_text(combo_codex.note, "no data");
+        set_combo_row(&combo_codex, 0, -1, "");
+        set_combo_row(&combo_codex, 1, -1, "");
+    }
+    // The note's width changed; keep it flush right.
+    const int head_h = lv_font_get_line_height(L.combo_head_font);
+    const int line_h = lv_font_get_line_height(L.combo_font);
+    lv_obj_align(combo_claude.note, LV_ALIGN_TOP_RIGHT, 0, head_h - line_h);
+    lv_obj_align(combo_codex.note, LV_ALIGN_TOP_RIGHT, 0, head_h - line_h);
+}
+
+// ---- Page dots ----
+// Three small dots between the panels and the status line say which page is
+// up and that there are more. Skipped where the layout has no room (round
+// panels: the rings run all the way down).
+static void build_page_dots(lv_obj_t* parent) {
+    if (L.round) return;
+    const int d = L.small_icons ? 4 : 6;
+    const int panels_bottom = L.content_y + 2 * L.usage_panel_h + L.usage_panel_gap;
+    const int status_top = L.scr_h + L.anim_y - lv_font_get_line_height(L.anim_font);
+    if (status_top - panels_bottom < d + 2) return;
+    page_dots_y = (panels_bottom + status_top) / 2 - d / 2;
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t* dot = lv_obj_create(parent);
+        lv_obj_set_size(dot, d, d);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(dot, 0, 0);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+        lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
+        page_dots[i] = dot;
+    }
+}
+
+// Highlight the current page; the Codex dot goes away while Codex has no
+// numbers, since swiping skips that page then.
+static void update_page_dots(screen_t page, bool visible) {
+    if (page_dots_y < 0) return;
+    const int d = L.small_icons ? 4 : 6;
+    const int step = d * 2 + 2;
+    const int n = codex_fresh() ? 3 : 2;
+    const screen_t pages[3] = { SCREEN_USAGE, SCREEN_CLAUDE, SCREEN_CODEX };
+    const int x0 = (L.scr_w - ((n - 1) * step + d)) / 2;
+    for (int i = 0; i < 3; i++) {
+        if (!visible || i >= n) {
+            lv_obj_add_flag(page_dots[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(page_dots[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(page_dots[i], x0 + i * step, page_dots_y);
+        lv_obj_set_style_bg_color(page_dots[i], pages[i] == page ? COL_TEXT : COL_BAR_BG, 0);
+    }
 }
 
 // Pairing hint — shown when disconnected so the screen isn't empty and the
@@ -876,43 +1247,64 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_clear_flag(usage_group, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(usage_group, LV_OBJ_FLAG_EVENT_BUBBLE);
 
+    // Claude's detail page.
+    GaugePair claude_gp = {};
+    build_gauge_pair(usage_group, &claude_gp, "Claude 5h", "Claude 7d");
+    panel_session     = claude_gp.panel_s;
+    lbl_session_pct   = claude_gp.pct_s;
+    lbl_session_label = claude_gp.label_s;
+    bar_session       = claude_gp.bar_s;
+    lbl_session_reset = claude_gp.reset_s;
+    panel_weekly      = claude_gp.panel_w;
+    lbl_weekly_pct    = claude_gp.pct_w;
+    lbl_weekly_label  = claude_gp.label_w;
+    bar_weekly        = claude_gp.bar_w;
+    lbl_weekly_reset  = claude_gp.reset_w;
+
+    // Enterprise-only overlays inside panel_session — hidden until enterprise data arrives
+    lbl_session_pct_sym = lv_label_create(panel_session);
+    lv_label_set_text(lbl_session_pct_sym, "%");
+    lv_obj_set_style_text_font(lbl_session_pct_sym, L.reset_font, 0);
+    lv_obj_set_style_text_color(lbl_session_pct_sym, COL_TEXT, 0);
+    lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
+
     if (L.round) {
-        build_round_usage(usage_group);
+        lbl_spending_desc = make_centered_label(panel_session, "of your monthly budget",
+                                                L.reset_font, COL_DIM, L.r_s_reset_y);
+        lbl_spending_status = make_centered_label(panel_session, "", L.pace_font, COL_DIM,
+                                                  L.r_s_reset_y + 20);
     } else {
-        panel_session = make_usage_panel(usage_group, L.content_y, "Current",
-                         &lbl_session_pct, &lbl_session_label,
-                         &bar_session, &lbl_session_reset);
-
-        // Enterprise-only overlays inside panel_session — hidden until enterprise data arrives
-        lbl_session_pct_sym = lv_label_create(panel_session);
-        lv_label_set_text(lbl_session_pct_sym, "%");
-        lv_obj_set_style_text_font(lbl_session_pct_sym, L.reset_font, 0);
-        lv_obj_set_style_text_color(lbl_session_pct_sym, COL_TEXT, 0);
-        lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
-
         lbl_spending_desc = lv_label_create(panel_session);
         lv_label_set_text(lbl_spending_desc, "of your monthly budget");
         lv_obj_set_style_text_font(lbl_spending_desc, L.reset_font, 0);
         lv_obj_set_style_text_color(lbl_spending_desc, COL_DIM, 0);
         lv_obj_set_pos(lbl_spending_desc, 0, L.usage_reset_y);
-        lv_obj_add_flag(lbl_spending_desc, LV_OBJ_FLAG_HIDDEN);
 
         lbl_spending_status = lv_label_create(panel_session);
         lv_label_set_text(lbl_spending_status, "");
         lv_obj_set_style_text_font(lbl_spending_status, L.pace_font, 0);
         lv_obj_set_pos(lbl_spending_status, 0, L.usage_reset_y + 20);
-        lv_obj_add_flag(lbl_spending_status, LV_OBJ_FLAG_HIDDEN);
-
-        panel_weekly = make_usage_panel(usage_group,
-                         L.content_y + L.usage_panel_h + L.usage_panel_gap, "Weekly",
-                         &lbl_weekly_pct, &lbl_weekly_label,
-                         &bar_weekly, &lbl_weekly_reset);
     }
+    lv_obj_add_flag(lbl_spending_desc, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(lbl_spending_status, LV_OBJ_FLAG_HIDDEN);
     // Recolor enabled so enterprise period box can color pace and reset separately
     lv_label_set_recolor(lbl_weekly_reset, true);
 
+    // Codex's detail page — same gauges, its own numbers.
+    codex_group = make_layer(usage_container);
+    build_gauge_pair(codex_group, &codex_gp, "Codex 5h", "Codex 7d");
+    lv_obj_add_flag(codex_group, LV_OBJ_FLAG_HIDDEN);
+
+    // The combo page: both providers, compact. Default data screen.
+    combo_group = make_layer(usage_container);
+    build_combo_block(combo_group, L.combo_y, "Claude", &combo_claude);
+    build_combo_block(combo_group, L.combo_y + L.combo_h + L.combo_gap, "Codex", &combo_codex);
+    lv_obj_add_flag(combo_group, LV_OBJ_FLAG_HIDDEN);
+    render_combo();
+
     build_pair_group(usage_container);
     build_idle_group(usage_container);
+    build_page_dots(usage_container);
 
     // Status line — always visible on the usage view. Driven by ui_tick_anim().
     lbl_anim = lv_label_create(usage_container);
@@ -993,10 +1385,24 @@ void ui_init(void) {
 
 void ui_update(const UsageData* data) {
     if (!data->valid) return;
+
+    // Codex first: its numbers ride on every payload, the "No data" beats
+    // included, so they update even while the Claude half is idle.
+    codex_data = data->codex;
+    if (codex_data.valid) {
+        last_codex_ms = lv_tick_get();
+        fill_gauge_pair(&codex_gp, codex_data.session_pct, codex_data.session_reset_mins,
+                        codex_data.weekly_pct, codex_data.weekly_reset_mins);
+    }
+
     data_ok = data->ok;
-    if (!data->ok) return;          // a {"ok":false} "no data" beat → fall through to idle, keep last numbers
+    if (!data->ok) {                // a {"ok":false} "no data" beat → fall through to idle, keep last numbers
+        render_combo();
+        return;
+    }
     last_data_ms = lv_tick_get();   // a real usage update just landed
     data_received = true;
+    claude_data = *data;
 
     if (data->clock_epoch > 0) {    // daemon supplied wall-clock time → drive the title clock
         clock_base_epoch = data->clock_epoch;
@@ -1027,7 +1433,8 @@ void ui_update(const UsageData* data) {
         if (panel_weekly) lv_obj_clear_flag(panel_weekly, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_set_style_text_font(lbl_session_pct, L.pct_font, 0);
-        lv_label_set_text(lbl_session_label, "Current");
+        lv_label_set_text(lbl_session_label, "Claude 5h");
+        lv_label_set_text(lbl_weekly_label, "Claude 7d");
         lv_obj_clear_flag(lbl_session_reset, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lbl_spending_desc,   LV_OBJ_FLAG_HIDDEN);
@@ -1077,29 +1484,51 @@ void ui_update(const UsageData* data) {
         format_reset_time(data->weekly_reset_mins, buf, sizeof(buf));
         lv_label_set_text(lbl_weekly_reset, buf);
     }
+    render_combo();
 }
 
 // Pick the usage-view sub-screen: pairing hint (BLE down), the idle "Zzz" screen
 // (connected but data has gone stale), or the live usage panels. Only re-lays-out
 // on an actual change. The animated status line stays visible everywhere — it
 // reads "Listening…" on the idle screen, keeping it alive rather than frozen.
+//
+// Which live view depends on the page: Claude's and Codex's detail pages go
+// idle when their own numbers are stale, the combo page only when both are.
+// view_state: 0 pair / 1 idle / 2 Claude / 3 Codex / 4 combo.
 static void update_view_state(void) {
     if (!usage_group || !pair_group || !idle_group) return;
+    const bool cl = claude_fresh();
+    const bool cx = codex_fresh();
+    const int mask = (cl ? 1 : 0) | (cx ? 2 : 0);
+    if (mask != fresh_mask) {   // a half went stale (or came back) without a new payload
+        fresh_mask = mask;
+        render_combo();
+    }
+    // Codex's numbers are gone: its page has nothing to show, and swiping
+    // skips it now, so go back to the combo instead of parking on "Zzz".
+    if (current_screen == SCREEN_CODEX && !cx) {
+        ui_show_screen(SCREEN_USAGE);
+        return;
+    }
+    const screen_t page = prev_non_splash_screen;
     int v;
     if (!s_ble_connected) {
         v = 0;  // pairing hint
-    } else if (data_received && data_ok && (lv_tick_get() - last_data_ms) < DATA_FRESH_MS) {
-        v = 2;  // live usage
+    } else if (page == SCREEN_CLAUDE) {
+        v = cl ? 2 : 1;
+    } else if (page == SCREEN_CODEX) {
+        v = cx ? 3 : 1;
     } else {
-        v = 1;  // idle / Zzz
+        v = (cl || cx) ? 4 : 1;
     }
+    update_page_dots(page, v != 0);
     if (v == view_state) return;
     view_state = v;
-    lv_obj_add_flag(pair_group, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(idle_group, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(usage_group, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(v == 0 ? pair_group : v == 1 ? idle_group : usage_group,
-                      LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t* groups[] = { pair_group, idle_group, usage_group, codex_group, combo_group };
+    for (int i = 0; i < 5; i++) {
+        if (i == v) lv_obj_clear_flag(groups[i], LV_OBJ_FLAG_HIDDEN);
+        else        lv_obj_add_flag(groups[i], LV_OBJ_FLAG_HIDDEN);
+    }
     // Der Eckbuddy haengt am view_state, nicht nur am Screen.
     apply_corner_creature();
 }
@@ -1130,10 +1559,10 @@ void ui_tick_anim(void) {
         if (current_screen == SCREEN_SPLASH) {
             Serial.printf("auto splash: %lu ms sichtbar\n",
                           (unsigned long)(millis() - auto_splash_started));
-            ui_show_screen(SCREEN_USAGE);
+            ui_show_screen(prev_non_splash_screen);
         }
     }
-    if (current_screen != SCREEN_USAGE) return;
+    if (current_screen == SCREEN_SPLASH) return;
     update_view_state();
     if (view_state == 1) splash_mini_tick();   // animate the resting creature on the idle screen
 
@@ -1204,7 +1633,6 @@ void ui_tick_anim(void) {
     lv_obj_set_style_text_color(lbl_anim, col, 0);
 }
 
-static screen_t prev_non_splash_screen = SCREEN_USAGE;
 static void apply_battery_visibility(void) {
     if (!battery_img) return;
     if (current_screen == SCREEN_SPLASH) lv_obj_add_flag(battery_img, LV_OBJ_FLAG_HIDDEN);
@@ -1215,7 +1643,7 @@ static void apply_battery_visibility(void) {
 // the usage screen shows live numbers — on the pair / idle screens there is
 // nothing to mirror, so the mascot keeps its own routine there.
 static void apply_corner_creature(void) {
-    bool host = usage_creature_on && usage_creature_anim[0] && view_state == 2;
+    bool host = usage_creature_on && usage_creature_anim[0] && view_state >= 2;
     splash_mascot_set_host_anim(host ? usage_creature_anim : "");
     if (logo_img) {
         if (current_screen == SCREEN_SPLASH) lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
@@ -1297,12 +1725,15 @@ void ui_show_screen(screen_t screen) {
 
     switch (screen) {
     case SCREEN_SPLASH:  splash_show(); break;
-    case SCREEN_USAGE:   lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_HIDDEN); break;
+    case SCREEN_USAGE:
+    case SCREEN_CLAUDE:
+    case SCREEN_CODEX:   lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_HIDDEN); break;
     default: break;
     }
 
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
+    if (screen != SCREEN_SPLASH) update_view_state();   // swap in this page's group now
     splash_mascot_set_visible(screen != SCREEN_SPLASH);
     // Erst nach current_screen: apply_corner_creature() liest die Variable,
     // nicht das Argument. Davor entschied es noch nach dem alten Screen und

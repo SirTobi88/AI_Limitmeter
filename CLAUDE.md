@@ -1,5 +1,37 @@
 # Project context
 
+**AI_Limitmeter** — a fork of Clawdmeter (cloned 2026-10-08 from
+`~/Documents/Clawdmeter`, history kept, no remote yet) that shows **OpenAI
+Codex's** limits next to Claude Code's:
+
+- Daemons: `daemon/codex_limits.py` reads the newest `rate_limits` from Codex's
+  session rollouts (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` +
+  `archived_sessions/`, or `$CODEX_HOME`), from `token_count` events:
+  `primary` = 5h (300 min), `secondary` = 7d (10080 min), `resets_at` epoch,
+  `plan_type`. A passed `resets_at` reads as 0 % / -1. macOS + Windows daemons
+  add it as `cx` = `{s, sr, w, wr, pl}` to every write, **including the
+  `{"ok":false}` beats**, and re-read it every `CODEX_TICK` (10 s) between
+  polls. `daemon/tests/conftest.py` stubs the reader so tests never see the
+  machine's real `~/.codex`. The bash daemon sends no `cx`.
+- Firmware: `UsageData.codex` (`CodexData`, data.h), parsed in `parse_json()`.
+  Screens: `SCREEN_USAGE` is now the **combo** page (both providers, compact
+  rows), `SCREEN_CLAUDE` / `SCREEN_CODEX` the big detail gauges. All three live
+  in `usage_container` and share title, status line, pair hint and idle view;
+  `update_view_state()` picks the group per page (view_state 0 pair / 1 idle /
+  2 Claude / 3 Codex / 4 combo). Detail gauges come from `build_gauge_pair()`
+  (bars or rings); combo panels from `build_combo_block()`, column widths
+  measured from the font at runtime.
+- **Swipe:** `LV_EVENT_GESTURE` left/right turns the pages (Codex skipped while
+  it has no fresh data). Two LVGL 9 facts this depends on: every child has
+  `GESTURE_BUBBLE` set by default, so the containers must clear it or the
+  gesture sails up to the screen object; and LVGL still sends `CLICKED` /
+  `SHORT_CLICKED` on release after a gesture, so `swipe_consumed` swallows
+  that release (otherwise every swipe also toggled the splash).
+- Testing swipes headless: the sim's `touch.cpp` reads the SDL mouse, which the
+  dummy video driver doesn't have — temporarily script the finger from an env
+  var (drag x 420→60 over 200 ms at y=240), then restore the file.
+
+
 ESP32-S3 / ESP32-C6 firmware for a desk-side Claude Code usage monitor. Each
 supported board lives in its own `firmware/src/boards/<name>/` folder and is
 selected via PlatformIO's `build_src_filter`. Adding a board means dropping in

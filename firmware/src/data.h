@@ -1,6 +1,18 @@
 #pragma once
 #include <Arduino.h>
 
+// OpenAI Codex's two rate-limit windows, read by the daemon from Codex's
+// session logs ("cx" in the payload). Rides on every payload, including the
+// {"ok":false} beats sent while the Claude token is dead.
+struct CodexData {
+    bool valid;              // false when the payload carried no "cx"
+    int  session_pct;        // 5h window 0-100
+    int  session_reset_mins; // minutes until it resets; -1 = unknown / already reset
+    int  weekly_pct;         // 7-day window 0-100
+    int  weekly_reset_mins;
+    char plan[12];           // "plus", "pro", ... ("" = not sent)
+};
+
 struct UsageData {
     float session_pct;       // utilization 0-100 (5h window Pro/Max; spending % Enterprise)
     int session_reset_mins;  // minutes until reset
@@ -22,6 +34,7 @@ struct UsageData {
                              // buddy briefly whenever the state changes
     long clock_epoch;        // local wall-clock epoch (s) from daemon; 0 = not provided
     int  clock_fmt;          // 12 or 24 (hour format from daemon); defaults to 24
+    CodexData codex;         // Codex's limits, shown beside Claude's
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };
