@@ -33,7 +33,7 @@ shows next to Claude's.
 
 | Combo on an LCD-1.54 (live data) | Combo (480×480, simulator) | Codex detail (simulator) |
 | :---: | :---: | :---: |
-| ![Combo on hardware](screenshots/lcd_154/combo.png) | ![Combo](screenshots/sim/combo_480.png) | ![Codex](screenshots/sim/codex_480.png) |
+| <img src="screenshots/lcd_154/combo.png" alt="Combo on hardware" width="260"> | <img src="screenshots/sim/combo_480.png" alt="Combo" width="260"> | <img src="screenshots/sim/codex_480.png" alt="Codex" width="260"> |
 
 Devices still advertise as `Clawdmeter XXXX`, so existing pairings and
 daemon configs keep working.
