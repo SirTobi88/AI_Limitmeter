@@ -49,6 +49,7 @@ void idle_note_activity(void) {
     if (state == STATE_AWAKE) return;
     // Asleep/fading-out shouldn't reach here in normal flow (callers gate via
     // idle_consume_wake_press first), but if it does: trigger a wake.
+    Serial.println("idle: wake (activity)");
     begin_fade(awake_brightness, last_activity_ms);
     state = STATE_FADING_IN;
 }
@@ -56,6 +57,7 @@ void idle_note_activity(void) {
 bool idle_consume_wake_press(void) {
     if (state == STATE_ASLEEP || state == STATE_FADING_OUT) {
         uint32_t now = millis();
+        Serial.println("idle: wake (button/touch)");
         last_activity_ms = now;
         begin_fade(awake_brightness, now);
         state = STATE_FADING_IN;
@@ -91,6 +93,8 @@ void idle_tick(void) {
     switch (state) {
     case STATE_AWAKE:
         if (now - last_activity_ms >= IDLE_TIMEOUT_MS) {
+            Serial.printf("idle: screen off, %lu s without input\n",
+                          (unsigned long)((now - last_activity_ms) / 1000));
             begin_fade(0, now);
             state = STATE_FADING_OUT;
         }

@@ -639,7 +639,11 @@ void loop() {
             // Sound level from the daemon's `volume`; kept in NVS across reboots.
             apply_volume(usage.volume);
             // Cues for Claude's state changes (when the daemon sets "ss").
-            state_sounds_on_state(usage.anim, usage.state_sounds);
+            // Needs you / Your turn also light a dark screen: that is the
+            // moment you look over, and the sound alone left it black.
+            if (state_sounds_on_state(usage.anim, usage.state_sounds)) {
+                idle_note_activity();
+            }
             // Dieselbe Animation zusaetzlich klein in der Ecke des
             // Usage-Screens, wenn der Host das moechte.
             ui_set_screen_mode(usage.screen_mode);

@@ -156,6 +156,31 @@ def _acquire_single_instance():
     return handle
 
 
+QUIT_GRACE_S = 5.0
+
+
+def _arm_exit_watchdog(delay: float = QUIT_GRACE_S, exit_fn=os._exit, log=None):
+    """After Quit, make sure the process really ends.
+
+    icon.stop() only posts a message to pystray's loop. In the field the main
+    thread was found still inside TrackPopupMenuEx after Quit (py-spy), the
+    process lived on with the daemon already stopped, and since it still held
+    the single-instance mutex, every new start exited silently — the device
+    stayed dark until the zombie was killed by hand. A daemon timer is harmless
+    when the exit goes normally (it dies with the process) and ends the
+    process when it doesn't.
+    """
+    def _fire() -> None:
+        if log is not None:
+            log(f"Quit: process still running {delay:.0f}s after stop; forcing exit")
+        exit_fn(0)
+
+    timer = threading.Timer(delay, _fire)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
 # ---------------------------------------------------------------------------
 # main() — tray entry (pystray on main thread, daemon loop in bg thread)
 # ---------------------------------------------------------------------------
@@ -243,6 +268,7 @@ def main() -> None:
         if ts.loop is not None and ts.stop_event is not None:
             ts.loop.call_soon_threadsafe(ts.stop_event.set)
             daemon_thread.join(timeout=6.0)
+        _arm_exit_watchdog(log=daemon_log)
         icon_ref.stop()
 
     def _on_toggle(_icon_ref, _item) -> None:

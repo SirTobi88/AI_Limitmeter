@@ -331,3 +331,34 @@ def test_main_runs_in_background_thread_without_signal_error():
 
     assert not t.is_alive(), "daemon main() hung in background thread"
     assert not errors, f"main() raised in a background thread: {errors!r}"
+
+
+# ---------------------------------------------------------------------------
+# Quit watchdog: a process that does not end after Quit must not linger
+# ---------------------------------------------------------------------------
+
+def test_exit_watchdog_forces_exit_and_logs():
+    """If the process is still alive after the grace period, the watchdog ends
+    it (a lingering tray holds the single-instance mutex and blocks restarts)."""
+    import threading as _threading
+    from daemon.tray_windows import _arm_exit_watchdog
+
+    fired = _threading.Event()
+    codes, lines = [], []
+
+    def fake_exit(code):
+        codes.append(code)
+        fired.set()
+
+    timer = _arm_exit_watchdog(0.01, exit_fn=fake_exit, log=lines.append)
+    assert timer.daemon, "must not keep the process alive on a normal exit"
+    assert fired.wait(2.0)
+    assert codes == [0]
+    assert lines and "forcing exit" in lines[0]
+
+
+def test_exit_watchdog_default_grace_leaves_time_for_disconnect():
+    """The grace period starts after the daemon's own 6 s disconnect join, so a
+    few seconds are enough; it must not be zero (that would cut a clean exit)."""
+    from daemon.tray_windows import QUIT_GRACE_S
+    assert 2.0 <= QUIT_GRACE_S <= 15.0

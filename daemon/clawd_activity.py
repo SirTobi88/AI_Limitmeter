@@ -29,11 +29,13 @@ import time
 from pathlib import Path
 
 def _default_activity_dir() -> Path:
-    # Windows keeps the daemon's config and log under %LOCALAPPDATA%\Clawdmeter;
-    # the session files go next to them.
-    if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        return base / "Clawdmeter" / "activity"
+    # Deliberately NOT under %LOCALAPPDATA% on Windows, next to the daemon's
+    # config and log: the Claude desktop app is an MSIX package, and everything
+    # it starts -- Claude Code and therefore this hook -- gets its AppData
+    # writes redirected into the package's private LocalCache. The daemon,
+    # started from the logon autostart outside that container, would never see
+    # the desktop app's sessions. The home directory is not redirected (the
+    # daemon reads the token Claude Code writes to ~/.claude the same way).
     return Path.home() / ".config" / "claude-usage-monitor" / "activity"
 
 

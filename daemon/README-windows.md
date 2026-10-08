@@ -242,8 +242,15 @@ footer, and plays the state sounds on boards with a speaker. The daemon's
 - The hooks are entries in `%USERPROFILE%\.claude\settings.json` that run
   `daemon\clawd_activity.py --hook` through the base interpreter's `pythonw.exe` (no
   console window on each tool call). Nothing else in that file is touched.
-- Each session drops a small state file into `%LOCALAPPDATA%\Clawdmeter\activity`; the
-  daemon folds them into one animation name every second and sends it between polls.
+- Each session drops a small state file into
+  `%USERPROFILE%\.config\claude-usage-monitor\activity`; the daemon folds them into one
+  animation name every second and sends it between polls. Not under `%LOCALAPPDATA%` on
+  purpose: the Claude desktop app is an MSIX package and redirects the `AppData` writes
+  of everything it starts (Claude Code and its hooks included) into its own storage,
+  where the daemon would never see them.
+- Run `install-windows.ps1` from a normal PowerShell window, **not** from a Claude
+  desktop-app session: there the autostart registry entry and the daemon's files would
+  land in the app's private storage too, and Windows would never start the tray at logon.
 - Install or remove them by hand:
 
   ```powershell

@@ -326,7 +326,9 @@ powershell -ExecutionPolicy Bypass -File install-windows.ps1
 
 This creates a venv, installs `bleak`/`httpx`/`pystray`/`Pillow` from the in-repo requirements (no internet downloads), offers the Claude Code hooks that let the device show what Claude is doing (default yes — see [What Clawd shows](#what-clawd-shows-this-fork)), registers a per-user login-autostart entry (`HKCU\…\Run`, no admin needed), and launches the tray app headlessly (no console window).
 
-The hooks run `clawd_activity.py` through the base interpreter's `pythonw.exe`, so no console window flashes on each tool call; they write one small file per session to `%LOCALAPPDATA%\Clawdmeter\activity`. Remove them with `.venv\Scripts\python.exe daemon\clawd_activity.py --uninstall`.
+The hooks run `clawd_activity.py` through the base interpreter's `pythonw.exe`, so no console window flashes on each tool call; they write one small file per session to `%USERPROFILE%\.config\claude-usage-monitor\activity`. Remove them with `.venv\Scripts\python.exe daemon\clawd_activity.py --uninstall`.
+
+**Run `install-windows.ps1` from a normal PowerShell window, not from a Claude desktop-app session.** The desktop app is an MSIX package: everything it starts gets its `AppData` and `HKCU` writes redirected into the package's private storage. Installed from there, the autostart entry exists only inside the app — Windows never sees it at logon — and the tray app it launches dies with the session.
 
 ### Run manually instead (optional)
 
