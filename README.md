@@ -20,6 +20,17 @@ Claude Code **and OpenAI Codex** limits on one desk display. This is a fork of
   Try it: `python3 daemon/codex_limits.py`. The Linux bash daemon does not
   send Codex data.
 
+**Using Codex from inside Claude Code.** OpenAI's
+[codex-plugin-cc](https://github.com/openai/codex-plugin-cc) lets Claude Code
+hand tasks to Codex — install it with
+`/plugin marketplace add openai/codex-plugin-cc`, then
+`/plugin install codex@openai-codex`. On top of it,
+[claude-codex-skills](https://github.com/SirTobi88/claude-codex-skills) adds
+two skills: `/codex-task` (Codex implements a task in its own worktree and
+opens a PR) and `/pr-review-codex` (Codex reviews an open PR). Either way the
+work counts against your Codex limits, which is exactly what this display
+shows next to Claude's.
+
 | Combo on an LCD-1.54 (live data) | Combo (480×480, simulator) | Codex detail (simulator) |
 | :---: | :---: | :---: |
 | ![Combo on hardware](screenshots/lcd_154/combo.png) | ![Combo](screenshots/sim/combo_480.png) | ![Codex](screenshots/sim/codex_480.png) |
