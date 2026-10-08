@@ -20,9 +20,9 @@ Claude Code **and OpenAI Codex** limits on one desk display. This is a fork of
   Try it: `python3 daemon/codex_limits.py`. The Linux bash daemon does not
   send Codex data.
 
-| Combo (480×480, simulator) | Combo (240×240, simulator) | Codex detail |
+| Combo on an LCD-1.54 (live data) | Combo (480×480, simulator) | Codex detail (simulator) |
 | :---: | :---: | :---: |
-| ![Combo](screenshots/sim/combo_480.png) | ![Combo small](screenshots/sim/combo_240.png) | ![Codex](screenshots/sim/codex_480.png) |
+| ![Combo on hardware](screenshots/lcd_154/combo.png) | ![Combo](screenshots/sim/combo_480.png) | ![Codex](screenshots/sim/codex_480.png) |
 
 Devices still advertise as `Clawdmeter XXXX`, so existing pairings and
 daemon configs keep working.
