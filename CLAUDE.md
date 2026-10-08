@@ -1,7 +1,7 @@
 # Project context
 
 **AI_Limitmeter** — a fork of Clawdmeter (cloned 2026-10-08 from
-`~/Documents/Clawdmeter`, history kept; private remote
+`~/Documents/Clawdmeter`, history kept; public remote, not a GitHub fork
 `SirTobi88/AI_Limitmeter`) that shows **OpenAI
 Codex's** limits next to Claude Code's:
 
