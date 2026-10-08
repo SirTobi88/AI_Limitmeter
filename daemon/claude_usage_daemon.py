@@ -25,9 +25,10 @@ from bleak import BleakClient
 from bleak.exc import BleakError
 
 try:
-    from . import clawd_activity
+    from . import clawd_activity, codex_limits
 except ImportError:  # run as a script, not as the daemon package
     import clawd_activity
+    import codex_limits
 
 DEVICE_NAME = "Clawdmeter"
 SERVICE_UUID = "4c41555a-4465-7669-6365-000000000001"
@@ -36,6 +37,7 @@ REQ_CHAR_UUID = "4c41555a-4465-7669-6365-000000000004"
 
 POLL_INTERVAL = 60
 TICK = 5
+CODEX_TICK = 10          # re-read Codex's session logs this often between polls
 ACTIVITY_TICK = 1
 CONNECT_TIMEOUT = 20.0
 
@@ -485,6 +487,23 @@ def detect_hour_format() -> int:
     return 24
 
 
+def add_codex_fields(payload: dict) -> dict | None:
+    """Add Codex's 5h / weekly windows as "cx" when its session logs have any.
+
+    Read from ~/.codex/sessions (see codex_limits.py), so it works whether or
+    not the Claude token is alive -- the device's combo screen shows both."""
+    try:
+        cx = codex_limits.read_codex_limits()
+    except Exception as e:  # a log being rotated mid-read must not cost a poll
+        log(f"Codex limits unreadable: {e}")
+        cx = None
+    if cx is None:
+        payload.pop("cx", None)
+    else:
+        payload["cx"] = cx
+    return cx
+
+
 def add_clock_fields(payload: dict) -> None:
     """Add wall-clock fields to the payload when the config opts in.
 
@@ -864,6 +883,10 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
     last_poll = 0.0
     used_successfully = False
     last_payload: dict | None = None
+    # The "No data" beat last sent while the Claude token is dead; it still
+    # carries Codex's numbers, so those are refreshed between polls too.
+    last_nodata: dict | None = None
+    last_codex_check = 0.0
     last_anim: str | None = None
     last_key: tuple = (None, None, None, None)
     last_anim_sent = 0.0
@@ -881,12 +904,15 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                 # we signal "No data" so the device idles instead of holding stale
                 # numbers until the CLI re-seeds it.
                 payload, dead = await poll_active()
+                last_codex_check = now
                 if payload is not None:
                     last_anim = add_activity_fields(payload)
                     last_key = _activity_key(payload)
+                    add_codex_fields(payload)
                     if await session.write_payload(payload):
                         last_poll = last_anim_sent = time.time()
                         last_payload = payload
+                        last_nodata = None
                         used_successfully = True
                 elif dead:
                     # No numbers to resend between polls until a token is back.
@@ -898,8 +924,11 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                     # be a healthy link for a full POLL_INTERVAL.
                     log("No usable token; signalling no-data to device — run "
                         "`claude login` or use the CLI to let Claude Code renew it")
-                    if await session.write_payload({"ok": False}):
+                    nodata = {"ok": False}
+                    add_codex_fields(nodata)
+                    if await session.write_payload(nodata):
                         last_poll = time.time()
+                        last_nodata = nodata
                 else:
                     # Transient poll failure (a live token that didn't answer this
                     # cycle) -> stay silent and retry next tick.
@@ -927,6 +956,22 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                         if anim != last_anim:
                             last_anim = anim
                             last_anim_sent = now
+
+            # Codex has no poll of its own: its numbers move whenever a Codex
+            # turn ends, so look at its session logs every few seconds and
+            # resend the last reading when they changed.
+            base = last_payload if last_payload is not None else last_nodata
+            if base is not None and now - last_codex_check >= CODEX_TICK:
+                last_codex_check = now
+                payload = dict(base)
+                if add_codex_fields(payload) != base.get("cx"):
+                    if "t" in base:
+                        add_clock_fields(payload)
+                    if await session.write_payload(payload):
+                        if base is last_payload:
+                            last_payload = payload
+                        else:
+                            last_nodata = payload
 
             # Activity on: tick fast so state changes reach the device quickly.
             tick = ACTIVITY_TICK if last_anim is not None else TICK

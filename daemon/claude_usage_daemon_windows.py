@@ -27,9 +27,10 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 try:
-    from . import clawd_activity
+    from . import clawd_activity, codex_limits
 except ImportError:  # run as a script, not as the daemon package
     import clawd_activity
+    import codex_limits
 
 DEVICE_NAME = "Clawdmeter"
 SERVICE_UUID = "4c41555a-4465-7669-6365-000000000001"
@@ -38,6 +39,7 @@ REQ_CHAR_UUID = "4c41555a-4465-7669-6365-000000000004"
 
 POLL_INTERVAL = 60
 TICK = 5
+CODEX_TICK = 10          # re-read Codex's session logs this often between polls
 ACTIVITY_TICK = 1          # while Claude Code's state is mirrored: react within a second
 CONNECT_RETRIES = 3        # D-01: attempts before giving up on a device
 CONNECT_RETRY_DELAY = 2.0  # D-01: seconds between failed connect attempts
@@ -265,6 +267,23 @@ def detect_hour_format() -> int:
             return 24 if str(val).strip() == "1" else 12
     except (ImportError, OSError):
         return 24
+
+
+def add_codex_fields(payload: dict) -> dict | None:
+    """Add Codex's 5h / weekly windows as "cx" when its session logs have any.
+
+    Read from ~/.codex/sessions (see codex_limits.py), so it works whether or
+    not the Claude token is alive -- the device's combo screen shows both."""
+    try:
+        cx = codex_limits.read_codex_limits()
+    except Exception as e:  # a log being rotated mid-read must not cost a poll
+        log(f"Codex limits unreadable: {e}")
+        cx = None
+    if cx is None:
+        payload.pop("cx", None)
+    else:
+        payload["cx"] = cx
+    return cx
 
 
 def add_clock_fields(payload: dict) -> None:
@@ -755,6 +774,10 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
     # Claude Code's state between polls: the last reading is resent with the
     # new "a" (or a changed screen_mode / corner_buddy) as soon as it changes.
     last_payload: dict | None = None
+    # The "No data" beat last sent while the Claude token is dead; it still
+    # carries Codex's numbers, so those are refreshed between polls too.
+    last_nodata: dict | None = None
+    last_codex_check = 0.0
     last_anim: str | None = None
     last_key: tuple = (None, None, None, None)
     last_anim_sent = 0.0
@@ -789,13 +812,17 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                 # the OAuth endpoint's rate limit (429). When the token is dead we just
                 # show "No data" until the CLI re-seeds it.
                 token = read_token()  # D-09: fresh each cycle
+                last_codex_check = now
                 if not token:
                     last_payload = None   # nothing to resend over "No data"
                     log("No token; signalling no-data to device")
                     if tray_state:
                         tray_state.set_error("token expired — run claude login")
-                    if await session.write_payload({"ok": False}):
+                    nodata = {"ok": False}
+                    add_codex_fields(nodata)
+                    if await session.write_payload(nodata):
                         last_poll = time.time()
+                        last_nodata = nodata
                         consecutive_failures = 0  # D-03: healthy link
                     elif note_write_failure():
                         break
@@ -815,9 +842,11 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                     if payload is not None:
                         last_anim = add_activity_fields(payload)
                         last_key = _activity_key(payload)
+                        add_codex_fields(payload)
                         if await session.write_payload(payload):
                             last_poll = last_anim_sent = time.time()
                             last_payload = payload
+                            last_nodata = None
                             used_successfully = True
                             consecutive_failures = 0  # D-03: reset on success
                             if tray_state:
@@ -829,8 +858,11 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                         # Transient poll failures (payload None without expiry) stay silent.
                         last_payload = None
                         log("No data (token dead); signalling idle to device")
-                        if await session.write_payload({"ok": False}):
+                        nodata = {"ok": False}
+                        add_codex_fields(nodata)
+                        if await session.write_payload(nodata):
                             last_poll = time.time()
+                            last_nodata = nodata
                             consecutive_failures = 0  # D-03: healthy link
                         elif note_write_failure():
                             break
@@ -863,6 +895,25 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                         if anim != last_anim:
                             last_anim = anim
                             last_anim_sent = now
+                    elif note_write_failure():
+                        break
+
+            # Codex has no poll of its own: its numbers move whenever a Codex
+            # turn ends, so look at its session logs every few seconds and
+            # resend the last reading when they changed.
+            base = last_payload if last_payload is not None else last_nodata
+            if base is not None and now - last_codex_check >= CODEX_TICK:
+                last_codex_check = now
+                payload = dict(base)
+                if add_codex_fields(payload) != base.get("cx"):
+                    if "t" in base:
+                        add_clock_fields(payload)
+                    if await session.write_payload(payload):
+                        consecutive_failures = 0
+                        if base is last_payload:
+                            last_payload = payload
+                        else:
+                            last_nodata = payload
                     elif note_write_failure():
                         break
 
