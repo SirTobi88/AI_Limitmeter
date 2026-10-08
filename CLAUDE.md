@@ -1,7 +1,8 @@
 # Project context
 
 **AI_Limitmeter** — a fork of Clawdmeter (cloned 2026-10-08 from
-`~/Documents/Clawdmeter`, history kept, no remote yet) that shows **OpenAI
+`~/Documents/Clawdmeter`, history kept; private remote
+`SirTobi88/AI_Limitmeter`) that shows **OpenAI
 Codex's** limits next to Claude Code's:
 
 - Daemons: `daemon/codex_limits.py` reads the newest `rate_limits` from Codex's
