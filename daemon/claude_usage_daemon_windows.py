@@ -120,25 +120,44 @@ class AuthError(Exception):
     must NOT be mislabeled as a token problem (SC#5: a boot-time `getaddrinfo
     failed` DNS blip wrongly fired the 'token expired' toast)."""
 
+    @property
+    def status(self) -> int:
+        return self.args[0] if self.args else 0
+
+
+def _config_value(key: str) -> str | None:
+    """The raw value of `key` in the config file (the last one, if it appears
+    twice), or None. Every config option is read through here."""
+    found = None
+    try:
+        if CONFIG_FILE.exists():
+            # utf-8-sig: Notepad may save a BOM; "replace": a stray ANSI
+            # umlaut in a comment must not discard the whole config.
+            text = CONFIG_FILE.read_text(encoding="utf-8-sig", errors="replace")
+            for line in text.splitlines():
+                line = line.split("#", 1)[0].strip()
+                if "=" not in line:
+                    continue
+                k, val = line.split("=", 1)
+                if k.strip().lower() == key:
+                    found = val.strip()
+    except OSError:
+        pass
+    return found
+
+
+def _config_choice(key: str, allowed: tuple[str, ...], default: str) -> str:
+    """`key` lowercased if it is one of `allowed`, else `default`."""
+    val = (_config_value(key) or "").lower()
+    return val if val in allowed else default
+
+
 def read_chime_setting() -> str:
     """Read the `chime` option from the config file. One of: off|on.
 
     Defaults to "off" so the device stays silent until the user opts in.
     """
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "chime":
-                    val = val.strip().lower()
-                    if val in ("off", "on"):
-                        return val
-    except OSError:
-        pass
-    return "off"
+    return _config_choice("chime", ("off", "on"), "off")
 
 
 def read_clock_setting() -> str:
@@ -147,20 +166,7 @@ def read_clock_setting() -> str:
     Defaults to "auto": the device shows the time in place of the "Usage"
     title, 12h or 24h as this machine is set. `clock = off` keeps "Usage".
     """
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "clock":
-                    val = val.strip().lower()
-                    if val in ("off", "auto", "12", "24"):
-                        return val
-    except OSError:
-        pass
-    return "auto"
+    return _config_choice("clock", ("off", "auto", "12", "24"), "auto")
 
 
 def read_activity_settings() -> dict:
@@ -177,18 +183,8 @@ def read_activity_settings() -> dict:
                "state_sounds": ("off", "on"),
                "screen_mode": ("usage", "clawd", "auto"),
                "corner_buddy": ("off", "on")}
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                key, val = key.strip().lower(), val.strip().lower()
-                if key in allowed and val in allowed[key]:
-                    opts[key] = val
-    except OSError:
-        pass
+    for key, ok in allowed.items():
+        opts[key] = _config_choice(key, ok, opts[key])
     return opts
 
 
@@ -233,20 +229,9 @@ DEFAULT_VOLUME = 70
 def read_volume_setting() -> int:
     """Read `volume` (0..100, % of the board's full sound level). Default 70."""
     try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "volume":
-                    try:
-                        return max(0, min(100, int(val.strip().rstrip("%"))))
-                    except ValueError:
-                        pass
-    except OSError:
-        pass
-    return DEFAULT_VOLUME
+        return max(0, min(100, int((_config_value("volume") or "").rstrip("%"))))
+    except ValueError:
+        return DEFAULT_VOLUME
 
 
 def add_chime_field(payload: dict) -> None:
@@ -429,20 +414,8 @@ def read_device_preference() -> str | None:
     a full address ("28:84:85:4B:F6:29"). Matching is on the hex digits alone,
     so colons and case don't matter.
     """
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "device":
-                    val = re.sub(r"[^0-9A-Fa-f]", "", val).upper()
-                    if val:
-                        return val
-    except OSError:
-        pass
-    return None
+    val = re.sub(r"[^0-9A-Fa-f]", "", _config_value("device") or "").upper()
+    return val or None
 
 
 def discover_bonded_addresses() -> list[str]:
@@ -701,81 +674,139 @@ CLI_RENEW_ARGS = [
 _last_cli_renew = 0.0   # time.monotonic() of the last attempt; 0 = none yet
 
 
-def _config_value(key: str) -> str | None:
-    """The raw value of `key` in the config file, or None."""
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                k, val = line.split("=", 1)
-                if k.strip().lower() == key:
-                    return val.strip()
-    except OSError:
-        pass
-    return None
-
-
 def read_cli_refresh_setting() -> str:
     """`cli_refresh` (on|off, default on): may the daemon run the Claude CLI to
     renew an expired token?"""
-    val = (_config_value("cli_refresh") or "").lower()
-    return val if val in ("on", "off") else "on"
+    return _config_choice("cli_refresh", ("on", "off"), "on")
 
 
-def find_claude_cli() -> str | None:
-    """Path of the claude executable: the config's `claude_cli`, else PATH,
-    else the native installer's %USERPROFILE%\\.local\\bin\\claude.exe."""
+def _npm_shim_command(shim: Path) -> list[str] | None:
+    """npm installs `claude` as a batch shim (claude.cmd). A batch file runs
+    through cmd.exe, whose quoting is not the one subprocess writes for -- the
+    JSON --settings value and the empty --tools argument would arrive mangled.
+    So start the package's cli.js with node directly, as the shim itself does."""
+    script = shim.parent / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
+    node = shim.parent / "node.exe"
+    node_cmd = str(node) if node.is_file() else shutil.which("node")
+    if script.is_file() and node_cmd:
+        return [node_cmd, str(script)]
+    return None
+
+
+def find_claude_cli() -> list[str] | None:
+    """The command that starts the Claude CLI: the config's `claude_cli`, else
+    PATH, else the native installer's %USERPROFILE%\\.local\\bin\\claude.exe.
+    An npm shim is resolved to node + cli.js. None when nothing usable exists."""
     configured = _config_value("claude_cli")
     if configured:
         path = Path(configured.strip('"')).expanduser()
-        return str(path) if path.is_file() else None
-    found = shutil.which("claude")
-    if found:
-        return found
-    fallback = Path.home() / ".local" / "bin" / "claude.exe"
-    return str(fallback) if fallback.is_file() else None
+    else:
+        found = shutil.which("claude")
+        path = Path(found) if found else Path.home() / ".local" / "bin" / "claude.exe"
+    if not path.is_file():
+        return None
+    if sys.platform == "win32" and path.suffix.lower() != ".exe":
+        # claude.cmd / claude.ps1, or npm's extensionless sh script beside them
+        return _npm_shim_command(path)
+    return [str(path)]
 
 
-async def renew_token_via_cli() -> bool:
+def _kill_tree(proc) -> None:
+    """End the CLI and everything it started. proc.kill() alone terminates
+    claude.exe only; its children would outlive it."""
+    if sys.platform == "win32":
+        try:
+            r = subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                capture_output=True, timeout=10,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if r.returncode == 0:
+                return
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)   # started in its own session
+            return
+        except (OSError, AttributeError):
+            pass
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass
+
+
+async def _communicate_or_stop(proc, stop_event: asyncio.Event | None) -> bytes | None:
+    """stderr of the finished CLI, or None when it ran past CLI_RENEW_TIMEOUT_S
+    or the daemon is stopping -- Quit must not wait for a hung CLI."""
+    comm = asyncio.ensure_future(proc.communicate())
+    waits = [comm]
+    if stop_event is not None:
+        waits.append(asyncio.ensure_future(stop_event.wait()))
+    try:
+        await asyncio.wait(waits, timeout=CLI_RENEW_TIMEOUT_S,
+                           return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        pending = [t for t in waits if not t.done()]
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    if comm.done() and not comm.cancelled():
+        return comm.result()[1] or b""
+    return None
+
+
+async def renew_token_via_cli(stop_event: asyncio.Event | None = None) -> bool:
     """Run the Claude CLI once so it renews the expired token. True when the
     CLI ran and exited cleanly -- the caller then reads the token again."""
     global _last_cli_renew
     if read_cli_refresh_setting() == "off":
+        log("CLI renewal is off (cli_refresh = off)")
         return False
     now = time.monotonic()
     if _last_cli_renew and now - _last_cli_renew < CLI_RENEW_COOLDOWN_S:
+        left = (CLI_RENEW_COOLDOWN_S - (now - _last_cli_renew)) / 60
+        log(f"Last CLI renewal did not help; next attempt in {left:.0f} min")
         return False
     _last_cli_renew = now
-    exe = find_claude_cli()
-    if not exe:
-        log("Token expired and no claude CLI found to renew it "
-            "(set claude_cli = <path> in the config)")
+    cmd = find_claude_cli()
+    if not cmd:
+        log("Token expired and no usable claude CLI found to renew it "
+            "(set claude_cli = <path to claude.exe> in the config)")
         return False
     log("Token expired; letting the Claude CLI renew it (one short `claude -p`)")
     try:
         proc = await asyncio.create_subprocess_exec(
-            exe, *CLI_RENEW_ARGS,
+            *cmd, *CLI_RENEW_ARGS,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
             cwd=tempfile.gettempdir(),
             env={**os.environ, "CLAWDMETER_SKIP_HOOK": "1"},
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            start_new_session=sys.platform != "win32",
         )
     except (OSError, NotImplementedError) as e:
         log(f"Could not start the Claude CLI: {e}")
         return False
     try:
-        _, err = await asyncio.wait_for(proc.communicate(), timeout=CLI_RENEW_TIMEOUT_S)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        log(f"Claude CLI did not finish within {CLI_RENEW_TIMEOUT_S}s; killed it")
+        err = await _communicate_or_stop(proc, stop_event)
+    finally:
+        # Timeout, Quit, or this task cancelled: never leave the CLI behind.
+        if proc.returncode is None:
+            _kill_tree(proc)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except (asyncio.TimeoutError, ProcessLookupError):
+                pass
+    if err is None:
+        if stop_event is not None and stop_event.is_set():
+            log("Stopping; ended the Claude CLI renewal")
+        else:
+            log(f"Claude CLI did not finish within {CLI_RENEW_TIMEOUT_S}s; ended it")
         return False
     if proc.returncode != 0:
-        msg = (err or b"").decode("utf-8", "replace").strip().splitlines()
+        msg = err.decode("utf-8", "replace").strip().splitlines()
         log(f"Claude CLI exited {proc.returncode}: {msg[-1][:200] if msg else ''} "
             "-- run `claude login` if the sign-in itself has expired")
         return False
@@ -783,10 +814,18 @@ async def renew_token_via_cli() -> bool:
     return True
 
 
-async def _poll_after_cli_renewal() -> dict | None:
+async def _poll_after_cli_renewal(stop_event: asyncio.Event | None = None) -> dict | None:
     """After a 401: let the CLI renew the token, then poll once more. Raises
-    AuthError when the token is still dead (or renewal is off / cooling down)."""
-    if not await renew_token_via_cli():
+    AuthError when the token is still dead (or renewal is off / cooling down);
+    None when the daemon is stopping, so Quit does not flash "No data"."""
+    def stopping() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    if stopping():
+        raise AuthError(401)        # quitting: don't start a CLI now
+    if not await renew_token_via_cli(stop_event):
+        if stopping():
+            return None             # Quit interrupted the renewal
         raise AuthError(401)
     token = read_token()
     if not token:
@@ -929,16 +968,20 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                     try:
                         try:
                             payload = await poll_api(token)
-                        except AuthError:
+                        except AuthError as e:
                             # We never refresh the token ourselves; Claude Code (its
                             # owner) does whenever it runs -- so let it run once.
-                            payload = await _poll_after_cli_renewal()
+                            # Only for a 401: a 403 is not an expired token, and
+                            # renewing it would just bill a request every 15 min.
+                            if e.status != 401:
+                                raise
+                            payload = await _poll_after_cli_renewal(stop_event)
                     except AuthError:
-                        # Still dead: renewal is off, cooling down, or the sign-in
-                        # itself expired and only `claude login` can re-seed it.
+                        # Still dead: renewal is off, cooling down, failed (logged
+                        # just above), or the sign-in itself expired and only
+                        # `claude login` can re-seed it.
                         expired = True
-                        log("Token expired/invalid; signalling no-data — run `claude login` "
-                            "or use the CLI to let Claude Code renew it")
+                        log("Token still rejected; signalling no-data")
                         if tray_state:
                             tray_state.set_error("token expired — run claude login")
                     if payload is not None:

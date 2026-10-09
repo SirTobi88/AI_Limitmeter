@@ -16,6 +16,20 @@ def _no_real_cli(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_windows_config(monkeypatch, tmp_path):
+    """Every 401 test reaches the Windows daemon's CLI renewal. Give each test
+    an empty config (not the developer's real %LOCALAPPDATA%\\Clawdmeter\\config,
+    whose cli_refresh / claude_cli would decide the outcome) and a fresh
+    renewal cooldown (a module global that would otherwise leak between tests)."""
+    try:
+        import daemon.claude_usage_daemon_windows as win
+    except ImportError:
+        return
+    monkeypatch.setattr(win, "CONFIG_FILE", tmp_path / "clawdmeter-config")
+    monkeypatch.setattr(win, "_last_cli_renew", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def _no_daemon_file_log(monkeypatch):
     """Keep test traffic out of the real %LOCALAPPDATA%\\Clawdmeter\\daemon.log.
 
