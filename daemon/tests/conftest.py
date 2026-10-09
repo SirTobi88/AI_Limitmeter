@@ -1,5 +1,6 @@
 """Shared fixtures for the daemon tests."""
 import asyncio
+import importlib
 
 import pytest
 
@@ -16,17 +17,19 @@ def _no_real_cli(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolated_windows_config(monkeypatch, tmp_path):
-    """Every 401 test reaches the Windows daemon's CLI renewal. Give each test
-    an empty config (not the developer's real %LOCALAPPDATA%\\Clawdmeter\\config,
-    whose cli_refresh / claude_cli would decide the outcome) and a fresh
-    renewal cooldown (a module global that would otherwise leak between tests)."""
-    try:
-        import daemon.claude_usage_daemon_windows as win
-    except ImportError:
-        return
-    monkeypatch.setattr(win, "CONFIG_FILE", tmp_path / "clawdmeter-config")
-    monkeypatch.setattr(win, "_last_cli_renew", 0.0)
+def _isolated_renewal(monkeypatch, tmp_path):
+    """Every 401 test reaches the CLI renewal. Give each test an empty config
+    (not the developer's real one, whose cli_refresh / claude_cli would decide
+    the outcome) and a fresh renewal cooldown (module state that would
+    otherwise leak between tests)."""
+    from daemon import cli_renew
+    monkeypatch.setattr(cli_renew, "_last_attempt", {})
+    for name in ("daemon.claude_usage_daemon_windows", "daemon.claude_usage_daemon"):
+        try:
+            mod = importlib.import_module(name)
+        except ImportError:
+            continue
+        monkeypatch.setattr(mod, "CONFIG_FILE", tmp_path / "clawdmeter-config")
 
 
 @pytest.fixture(autouse=True)

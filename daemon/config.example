@@ -53,7 +53,7 @@ chime = off
 # board that is switched off or out of range never blocks the rest.
 # device =
 
-# Renew an expired token through the Claude CLI (Windows daemon). The daemon
+# Renew an expired token through the Claude CLI (macOS and Windows daemons). The daemon
 # never refreshes the OAuth token itself -- Claude Code owns it and renews it
 # whenever it runs. When no Claude Code has run for a while and the API says
 # 401, the daemon runs `claude -p` once (Haiku, one word, no tools, no hooks,
@@ -62,8 +62,10 @@ chime = off
 #   on  = let the daemon run the CLI (default)
 #   off = show "No data" until you use Claude Code yourself
 # cli_refresh = on
-# Path to the claude executable, if it is neither on PATH nor in
-# %USERPROFILE%\.local\bin\claude.exe:
+# Path to the claude executable, if it is neither on PATH nor where the
+# installers put it (~/.local/bin/claude, Homebrew; on Windows
+# %USERPROFILE%\.local\bin\claude.exe):
+# claude_cli = ~/.local/bin/claude
 # claude_cli = C:\Users\you\.local\bin\claude.exe
 
 # Show on the device what Claude Code is doing — thinking, writing, waiting for

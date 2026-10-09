@@ -195,6 +195,8 @@ After flashing, open **System Settings → Bluetooth** and click *Connect* next 
 
 The daemon reads your Claude OAuth token from the macOS Keychain (service `Claude Code-credentials`), polls usage every 60 s, and pushes it to the display over BLE.
 
+When the token has expired because no Claude Code ran for a while (overnight, say), the daemon runs one short `claude -p` so Claude Code renews it, at most every 15 minutes. `cli_refresh = off` in the config turns that off. If the log then shows `Claude CLI exited …`, run `claude login`.
+
 ```bash
 ./install-mac.sh
 ```
