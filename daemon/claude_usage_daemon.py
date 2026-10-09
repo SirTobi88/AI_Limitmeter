@@ -25,10 +25,12 @@ from bleak import BleakClient
 from bleak.exc import BleakError
 
 try:
-    from . import clawd_activity, codex_limits
+    from . import cli_renew, clawd_activity, codex_limits, config_file
 except ImportError:  # run as a script, not as the daemon package
+    import cli_renew
     import clawd_activity
     import codex_limits
+    import config_file
 
 DEVICE_NAME = "Clawdmeter"
 SERVICE_UUID = "4c41555a-4465-7669-6365-000000000001"
@@ -64,8 +66,12 @@ API_BODY = {
 
 class TokenExpired(Exception):
     """Raised by poll_api on a 401/403 — the access token is dead. The daemon never
-    refreshes (pure free-ride: Claude Code owns refreshing), so the caller just
-    signals "No data" to the device until the CLI re-seeds the token."""
+    refreshes it itself (Claude Code owns refreshing); on a 401 it lets the CLI
+    renew it (renew_token_via_cli), else it signals "No data" to the device."""
+
+    def __init__(self, status: int = 401) -> None:
+        super().__init__(status)
+        self.status = status
 
 
 def log(msg: str) -> None:
@@ -530,7 +536,7 @@ async def poll_api(token: str) -> dict | None:
         return None
     if resp.status_code in (401, 403):
         log(f"API HTTP {resp.status_code} (token expired/invalid)")
-        raise TokenExpired()
+        raise TokenExpired(resp.status_code)
     if resp.status_code >= 400:
         # A 429 means the plan's limit is used up — which rejects this probe
         # too — but it still carries the rate-limit headers, and that is the
@@ -666,7 +672,47 @@ class PlanSelector:
 _SELECTOR = PlanSelector()
 
 
-async def poll_active(selector: PlanSelector = _SELECTOR) -> tuple[dict | None, bool]:
+def read_cli_refresh_setting() -> str:
+    """`cli_refresh` (on|off, default on): may the daemon run the Claude CLI to
+    renew an expired token?"""
+    return config_file.choice(CONFIG_FILE, "cli_refresh", ("on", "off"), "on")
+
+
+async def renew_token_via_cli(config_dir: Path,
+                              stop_event: asyncio.Event | None = None) -> bool:
+    """Run the Claude CLI once so it renews `config_dir`'s expired token
+    (cli_renew.py, shared with the Windows daemon). True when it ran cleanly.
+
+    Only the default dir is known to work on macOS: for another dir Claude
+    Code keeps the token in its own Keychain entry, while read_token_for()
+    reads that dir's file -- see its docstring."""
+    return await cli_renew.renew(
+        enabled=read_cli_refresh_setting() == "on",
+        claude_cli=config_file.value(CONFIG_FILE, "claude_cli"),
+        log=log, stop_event=stop_event,
+        config_dir=None if config_dir == DEFAULT_CONFIG_DIR else config_dir)
+
+
+async def _poll_dir(d: Path, token: str,
+                    stop_event: asyncio.Event | None = None) -> dict | None:
+    """poll_api for one dir; on a 401 let the CLI renew the token and poll once
+    more. Raises TokenExpired when the token is still dead -- or on a 403, which
+    is no expired token, so renewing would only bill a request."""
+    try:
+        return await poll_api(token)
+    except TokenExpired as e:
+        if e.status != 401 or (stop_event is not None and stop_event.is_set()):
+            raise
+        if not await renew_token_via_cli(d, stop_event):
+            raise
+        token = read_token_for(d)
+        if not token:
+            raise
+        return await poll_api(token)   # a second 401 propagates
+
+
+async def poll_active(selector: PlanSelector = _SELECTOR,
+                      stop_event: asyncio.Event | None = None) -> tuple[dict | None, bool]:
     """Poll every configured config dir; return ``(active_payload, all_dead)``.
 
     ``active_payload`` — the active plan's payload dict, or None when no dir
@@ -678,8 +724,9 @@ async def poll_active(selector: PlanSelector = _SELECTOR) -> tuple[dict | None, 
     signal "No data". False when at least one token authenticated — including a
     transient non-auth poll failure worth retrying silently rather than idling.
 
-    Pure free-ride: a 401 (TokenExpired) means that dir's token has expired and
-    only Claude Code (its owner) can re-seed it — we never refresh it ourselves.
+    Free-ride: a 401 (TokenExpired) means that dir's token has expired and
+    only Claude Code (its owner) can re-seed it — we never refresh it ourselves,
+    but let the CLI do it once (_poll_dir).
     """
     dirs = read_config_dirs()
     payloads: dict[Path, dict] = {}
@@ -691,9 +738,9 @@ async def poll_active(selector: PlanSelector = _SELECTOR) -> tuple[dict | None, 
             log(f"No token in {d}; skipping")
             continue
         try:
-            payload = await poll_api(token)
+            payload = await _poll_dir(d, token, stop_event)
         except TokenExpired:
-            log(f"Token in {d} expired/invalid; skipping")
+            log(f"Token in {d} still rejected; skipping")
             continue
         # Authenticated: a transient None here isn't an auth failure, so the
         # dir counts as live and we stay silent rather than idling the device.
@@ -896,15 +943,17 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
             elapsed = now - last_poll
             if session.refresh_requested.is_set() or elapsed >= POLL_INTERVAL:
                 session.refresh_requested.clear()
-                # Pure free-ride: read whatever access token(s) Claude Code
-                # currently holds across the configured config dirs and NEVER
-                # refresh them ourselves. Claude Code (the token's owner) does all
-                # refreshing; refreshing here would race its rotation and feed the
-                # OAuth endpoint's rate limit (429). When no dir has a usable token
-                # we signal "No data" so the device idles instead of holding stale
-                # numbers until the CLI re-seeds it.
-                payload, dead = await poll_active()
+                # Free-ride: read whatever access token(s) Claude Code currently
+                # holds across the configured config dirs and NEVER refresh them
+                # ourselves. Claude Code (the token's owner) does all refreshing;
+                # refreshing here would race its rotation and feed the OAuth
+                # endpoint's rate limit (429). On a 401 the CLI gets one run to
+                # renew it (_poll_dir). When no dir has a usable token we signal
+                # "No data" so the device idles instead of holding stale numbers.
+                payload, dead = await poll_active(stop_event=stop_event)
                 last_codex_check = now
+                if stop_event.is_set():
+                    break           # Quit during a CLI renewal: no "No data" flash
                 if payload is not None:
                     last_anim = add_activity_fields(payload)
                     last_key = _activity_key(payload)
@@ -922,8 +971,7 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                     # last_poll on the write result (like the data path) so a
                     # failed beat retries next tick instead of throttling what may
                     # be a healthy link for a full POLL_INTERVAL.
-                    log("No usable token; signalling no-data to device — run "
-                        "`claude login` or use the CLI to let Claude Code renew it")
+                    log("No usable token; signalling no-data to device")
                     nodata = {"ok": False}
                     add_codex_fields(nodata)
                     if await session.write_payload(nodata):

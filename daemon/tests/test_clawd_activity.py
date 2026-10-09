@@ -158,7 +158,7 @@ def test_mode_change_is_sent_between_polls(tmp_path, monkeypatch):
 
     polls = []
 
-    async def fake_poll():
+    async def fake_poll(**_kw):
         polls.append(1)
         return {"s": 10, "w": 5, "ok": True}, False
 
@@ -218,7 +218,7 @@ def test_no_data_beat_stops_activity_resends(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.clawd_activity, "current_anim", lambda limit_hit=False: next(anims))
     results = iter([({"s": 10, "w": 5, "ok": True}, False)] + [(None, True)] * 1000)
 
-    async def fake_poll():
+    async def fake_poll(**_kw):
         return next(results)
 
     monkeypatch.setattr(mod, "poll_active", fake_poll)

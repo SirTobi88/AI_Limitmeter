@@ -1,5 +1,35 @@
 """Shared fixtures for the daemon tests."""
+import asyncio
+import importlib
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_real_cli(monkeypatch):
+    """No test may start a real process through asyncio. A mocked 401 sends the
+    Windows daemon to renew the token with `claude -p`, which on a dev machine
+    would be a real request on the developer's account. Tests of the renewal
+    replace this with their own fake."""
+    async def blocked(*_a, **_kw):
+        raise OSError("tests must not start processes")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", blocked)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_renewal(monkeypatch, tmp_path):
+    """Every 401 test reaches the CLI renewal. Give each test an empty config
+    (not the developer's real one, whose cli_refresh / claude_cli would decide
+    the outcome) and a fresh renewal cooldown (module state that would
+    otherwise leak between tests)."""
+    from daemon import cli_renew
+    monkeypatch.setattr(cli_renew, "_last_attempt", {})
+    for name in ("daemon.claude_usage_daemon_windows", "daemon.claude_usage_daemon"):
+        try:
+            mod = importlib.import_module(name)
+        except ImportError:
+            continue
+        monkeypatch.setattr(mod, "CONFIG_FILE", tmp_path / "clawdmeter-config")
 
 
 @pytest.fixture(autouse=True)

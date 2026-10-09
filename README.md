@@ -237,6 +237,8 @@ After flashing, open **System Settings → Bluetooth** and click *Connect* next 
 
 The daemon reads your Claude OAuth token from the macOS Keychain (service `Claude Code-credentials`), polls usage every 60 s, and pushes it to the display over BLE.
 
+When the token has expired because no Claude Code ran for a while (overnight, say), the daemon runs one short `claude -p` so Claude Code renews it, at most every 15 minutes. `cli_refresh = off` in the config turns that off. If the log then shows `Claude CLI exited …`, run `claude login`.
+
 ```bash
 ./install-mac.sh
 ```
@@ -357,7 +359,7 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Clawdmeter /f
 | Symptom | Fix |
 |---------|-----|
 | `Device not found` | Power on the device; make sure it's in range and paired. |
-| `token expired` toast / `API HTTP 401` | Re-run `claude login`, then restart the daemon. |
+| `token expired` toast / `API HTTP 401` | The daemon first lets the Claude CLI renew the token (one short `claude -p`, at most every 15 min — `cli_refresh` in the config). If the log then shows `Claude CLI exited …`, re-run `claude login`. |
 | `Connection failed` | Toggle Windows Bluetooth off/on in Settings. |
 | `Warning: running under Linux/WSL` | Run from a native PowerShell window, not a WSL shell. |
 

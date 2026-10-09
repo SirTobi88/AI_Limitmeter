@@ -27,10 +27,12 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 try:
-    from . import clawd_activity, codex_limits
+    from . import cli_renew, clawd_activity, codex_limits, config_file
 except ImportError:  # run as a script, not as the daemon package
+    import cli_renew
     import clawd_activity
     import codex_limits
+    import config_file
 
 DEVICE_NAME = "Clawdmeter"
 SERVICE_UUID = "4c41555a-4465-7669-6365-000000000001"
@@ -120,25 +122,28 @@ class AuthError(Exception):
     must NOT be mislabeled as a token problem (SC#5: a boot-time `getaddrinfo
     failed` DNS blip wrongly fired the 'token expired' toast)."""
 
+    @property
+    def status(self) -> int:
+        return self.args[0] if self.args else 0
+
+
+def _config_value(key: str) -> str | None:
+    """The raw value of `key` in the config file, or None. Every config option
+    is read through here."""
+    return config_file.value(CONFIG_FILE, key)
+
+
+def _config_choice(key: str, allowed: tuple[str, ...], default: str) -> str:
+    """`key` lowercased if it is one of `allowed`, else `default`."""
+    return config_file.choice(CONFIG_FILE, key, allowed, default)
+
+
 def read_chime_setting() -> str:
     """Read the `chime` option from the config file. One of: off|on.
 
     Defaults to "off" so the device stays silent until the user opts in.
     """
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "chime":
-                    val = val.strip().lower()
-                    if val in ("off", "on"):
-                        return val
-    except OSError:
-        pass
-    return "off"
+    return _config_choice("chime", ("off", "on"), "off")
 
 
 def read_clock_setting() -> str:
@@ -147,20 +152,7 @@ def read_clock_setting() -> str:
     Defaults to "auto": the device shows the time in place of the "Usage"
     title, 12h or 24h as this machine is set. `clock = off` keeps "Usage".
     """
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "clock":
-                    val = val.strip().lower()
-                    if val in ("off", "auto", "12", "24"):
-                        return val
-    except OSError:
-        pass
-    return "auto"
+    return _config_choice("clock", ("off", "auto", "12", "24"), "auto")
 
 
 def read_activity_settings() -> dict:
@@ -177,18 +169,8 @@ def read_activity_settings() -> dict:
                "state_sounds": ("off", "on"),
                "screen_mode": ("usage", "clawd", "auto"),
                "corner_buddy": ("off", "on")}
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                key, val = key.strip().lower(), val.strip().lower()
-                if key in allowed and val in allowed[key]:
-                    opts[key] = val
-    except OSError:
-        pass
+    for key, ok in allowed.items():
+        opts[key] = _config_choice(key, ok, opts[key])
     return opts
 
 
@@ -233,20 +215,9 @@ DEFAULT_VOLUME = 70
 def read_volume_setting() -> int:
     """Read `volume` (0..100, % of the board's full sound level). Default 70."""
     try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "volume":
-                    try:
-                        return max(0, min(100, int(val.strip().rstrip("%"))))
-                    except ValueError:
-                        pass
-    except OSError:
-        pass
-    return DEFAULT_VOLUME
+        return max(0, min(100, int((_config_value("volume") or "").rstrip("%"))))
+    except ValueError:
+        return DEFAULT_VOLUME
 
 
 def add_chime_field(payload: dict) -> None:
@@ -446,20 +417,8 @@ def read_device_preference() -> str | None:
     a full address ("28:84:85:4B:F6:29"). Matching is on the hex digits alone,
     so colons and case don't matter.
     """
-    try:
-        if CONFIG_FILE.exists():
-            for line in CONFIG_FILE.read_text().splitlines():
-                line = line.split("#", 1)[0].strip()
-                if "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                if key.strip().lower() == "device":
-                    val = re.sub(r"[^0-9A-Fa-f]", "", val).upper()
-                    if val:
-                        return val
-    except OSError:
-        pass
-    return None
+    val = re.sub(r"[^0-9A-Fa-f]", "", _config_value("device") or "").upper()
+    return val or None
 
 
 def discover_bonded_addresses() -> list[str]:
@@ -689,6 +648,45 @@ def _read_expiry() -> str:
     return "expiry unknown"
 
 
+# ---------------------------------------------------------------------------
+# Token renewal through the Claude CLI (cli_renew.py, shared with macOS)
+# ---------------------------------------------------------------------------
+
+
+def read_cli_refresh_setting() -> str:
+    """`cli_refresh` (on|off, default on): may the daemon run the Claude CLI to
+    renew an expired token?"""
+    return _config_choice("cli_refresh", ("on", "off"), "on")
+
+
+async def renew_token_via_cli(stop_event: asyncio.Event | None = None) -> bool:
+    """Run the Claude CLI once so it renews the expired token. True when the
+    CLI ran and exited cleanly -- the caller then reads the token again."""
+    return await cli_renew.renew(
+        enabled=read_cli_refresh_setting() == "on",
+        claude_cli=_config_value("claude_cli"),
+        log=log, stop_event=stop_event)
+
+
+async def _poll_after_cli_renewal(stop_event: asyncio.Event | None = None) -> dict | None:
+    """After a 401: let the CLI renew the token, then poll once more. Raises
+    AuthError when the token is still dead (or renewal is off / cooling down);
+    None when the daemon is stopping, so Quit does not flash "No data"."""
+    def stopping() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    if stopping():
+        raise AuthError(401)        # quitting: don't start a CLI now
+    if not await renew_token_via_cli(stop_event):
+        if stopping():
+            return None             # Quit interrupted the renewal
+        raise AuthError(401)
+    token = read_token()
+    if not token:
+        raise AuthError(401)
+    return await poll_api(token)   # a second 401 propagates
+
+
 async def _wait_first(*events: asyncio.Event, timeout: float) -> None:
     """Return when any of `events` is set, or after `timeout` seconds.
 
@@ -830,13 +828,22 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                     payload = None
                     expired = False
                     try:
-                        payload = await poll_api(token)
+                        try:
+                            payload = await poll_api(token)
+                        except AuthError as e:
+                            # We never refresh the token ourselves; Claude Code (its
+                            # owner) does whenever it runs -- so let it run once.
+                            # Only for a 401: a 403 is not an expired token, and
+                            # renewing it would just bill a request every 15 min.
+                            if e.status != 401:
+                                raise
+                            payload = await _poll_after_cli_renewal(stop_event)
                     except AuthError:
-                        # Pure free-ride: we never refresh. A 401/403 means Claude Code's
-                        # token has expired and only Claude Code (its owner) can re-seed it.
+                        # Still dead: renewal is off, cooling down, failed (logged
+                        # just above), or the sign-in itself expired and only
+                        # `claude login` can re-seed it.
                         expired = True
-                        log("Token expired/invalid; signalling no-data — run `claude login` "
-                            "or use the CLI to let Claude Code renew it")
+                        log("Token still rejected; signalling no-data")
                         if tray_state:
                             tray_state.set_error("token expired — run claude login")
                     if payload is not None:
