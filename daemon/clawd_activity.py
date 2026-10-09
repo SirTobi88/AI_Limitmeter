@@ -254,11 +254,20 @@ def set_installed(on: bool, settings_path: Path = CLAUDE_SETTINGS) -> None:
     os.replace(tmp, settings_path)
 
 
+def _hook_disabled() -> bool:
+    """True inside the daemon's own `claude -p` token renewal (it sets
+    CLAWDMETER_SKIP_HOOK): that run is not the user working, and must not make
+    the device report a turn."""
+    return bool(os.environ.get("CLAWDMETER_SKIP_HOOK"))
+
+
 if __name__ == "__main__":
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     if arg == "--hook":
         try:
-            handle_hook(sys.stdin.read())
+            raw = sys.stdin.read()
+            if not _hook_disabled():
+                handle_hook(raw)
         except Exception:
             pass
         sys.exit(0)
