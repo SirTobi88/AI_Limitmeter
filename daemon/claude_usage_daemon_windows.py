@@ -14,9 +14,11 @@ import logging
 import logging.handlers
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -670,6 +672,128 @@ def _read_expiry() -> str:
     return "expiry unknown"
 
 
+# ---------------------------------------------------------------------------
+# Token renewal through the Claude CLI
+# ---------------------------------------------------------------------------
+# The daemon still never refreshes the OAuth token itself: that would race
+# Claude Code's own rotation (two refreshers, one refresh token) and feed the
+# OAuth endpoint's rate limit. But the token only goes stale when no Claude
+# Code has run for a while -- and Claude Code renews it whenever it starts and
+# finds it expired. So on a 401 the daemon runs the official CLI once, with
+# the smallest request it accepts, and reads the file again: the owner does the
+# refresh, with its own locking, and the device keeps its numbers.
+
+CLI_RENEW_COOLDOWN_S = 15 * 60   # one attempt per quarter hour, not one per poll
+CLI_RENEW_TIMEOUT_S = 120
+# Haiku, one word back, no tools, no MCP servers, nothing saved to the session
+# history, no hooks -- the run must not show up on the device as Claude working
+# (CLAWDMETER_SKIP_HOOK below covers a CLI that would ignore disableAllHooks).
+# Not --bare: it skips OAuth, which is the whole point of the run.
+CLI_RENEW_ARGS = [
+    "-p", "Reply with OK.",
+    "--model", "haiku",
+    "--tools", "",
+    "--strict-mcp-config",
+    "--no-session-persistence",
+    "--settings", '{"disableAllHooks": true}',
+]
+
+_last_cli_renew = 0.0   # time.monotonic() of the last attempt; 0 = none yet
+
+
+def _config_value(key: str) -> str | None:
+    """The raw value of `key` in the config file, or None."""
+    try:
+        if CONFIG_FILE.exists():
+            for line in CONFIG_FILE.read_text().splitlines():
+                line = line.split("#", 1)[0].strip()
+                if "=" not in line:
+                    continue
+                k, val = line.split("=", 1)
+                if k.strip().lower() == key:
+                    return val.strip()
+    except OSError:
+        pass
+    return None
+
+
+def read_cli_refresh_setting() -> str:
+    """`cli_refresh` (on|off, default on): may the daemon run the Claude CLI to
+    renew an expired token?"""
+    val = (_config_value("cli_refresh") or "").lower()
+    return val if val in ("on", "off") else "on"
+
+
+def find_claude_cli() -> str | None:
+    """Path of the claude executable: the config's `claude_cli`, else PATH,
+    else the native installer's %USERPROFILE%\\.local\\bin\\claude.exe."""
+    configured = _config_value("claude_cli")
+    if configured:
+        path = Path(configured.strip('"')).expanduser()
+        return str(path) if path.is_file() else None
+    found = shutil.which("claude")
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / "claude.exe"
+    return str(fallback) if fallback.is_file() else None
+
+
+async def renew_token_via_cli() -> bool:
+    """Run the Claude CLI once so it renews the expired token. True when the
+    CLI ran and exited cleanly -- the caller then reads the token again."""
+    global _last_cli_renew
+    if read_cli_refresh_setting() == "off":
+        return False
+    now = time.monotonic()
+    if _last_cli_renew and now - _last_cli_renew < CLI_RENEW_COOLDOWN_S:
+        return False
+    _last_cli_renew = now
+    exe = find_claude_cli()
+    if not exe:
+        log("Token expired and no claude CLI found to renew it "
+            "(set claude_cli = <path> in the config)")
+        return False
+    log("Token expired; letting the Claude CLI renew it (one short `claude -p`)")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            exe, *CLI_RENEW_ARGS,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=tempfile.gettempdir(),
+            env={**os.environ, "CLAWDMETER_SKIP_HOOK": "1"},
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, NotImplementedError) as e:
+        log(f"Could not start the Claude CLI: {e}")
+        return False
+    try:
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=CLI_RENEW_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        log(f"Claude CLI did not finish within {CLI_RENEW_TIMEOUT_S}s; killed it")
+        return False
+    if proc.returncode != 0:
+        msg = (err or b"").decode("utf-8", "replace").strip().splitlines()
+        log(f"Claude CLI exited {proc.returncode}: {msg[-1][:200] if msg else ''} "
+            "-- run `claude login` if the sign-in itself has expired")
+        return False
+    log("Claude CLI ran; reading the token again")
+    return True
+
+
+async def _poll_after_cli_renewal() -> dict | None:
+    """After a 401: let the CLI renew the token, then poll once more. Raises
+    AuthError when the token is still dead (or renewal is off / cooling down)."""
+    if not await renew_token_via_cli():
+        raise AuthError(401)
+    token = read_token()
+    if not token:
+        raise AuthError(401)
+    return await poll_api(token)   # a second 401 propagates
+
+
 async def _wait_first(*events: asyncio.Event, timeout: float) -> None:
     """Return when any of `events` is set, or after `timeout` seconds.
 
@@ -803,10 +927,15 @@ async def connect_and_run(device, stop_event: asyncio.Event, tray_state=None) ->
                     payload = None
                     expired = False
                     try:
-                        payload = await poll_api(token)
+                        try:
+                            payload = await poll_api(token)
+                        except AuthError:
+                            # We never refresh the token ourselves; Claude Code (its
+                            # owner) does whenever it runs -- so let it run once.
+                            payload = await _poll_after_cli_renewal()
                     except AuthError:
-                        # Pure free-ride: we never refresh. A 401/403 means Claude Code's
-                        # token has expired and only Claude Code (its owner) can re-seed it.
+                        # Still dead: renewal is off, cooling down, or the sign-in
+                        # itself expired and only `claude login` can re-seed it.
                         expired = True
                         log("Token expired/invalid; signalling no-data — run `claude login` "
                             "or use the CLI to let Claude Code renew it")

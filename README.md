@@ -315,7 +315,7 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Clawdmeter /f
 | Symptom | Fix |
 |---------|-----|
 | `Device not found` | Power on the device; make sure it's in range and paired. |
-| `token expired` toast / `API HTTP 401` | Re-run `claude login`, then restart the daemon. |
+| `token expired` toast / `API HTTP 401` | The daemon first lets the Claude CLI renew the token (one short `claude -p`, at most every 15 min — `cli_refresh` in the config). If the log then shows `Claude CLI exited …`, re-run `claude login`. |
 | `Connection failed` | Toggle Windows Bluetooth off/on in Settings. |
 | `Warning: running under Linux/WSL` | Run from a native PowerShell window, not a WSL shell. |
 
