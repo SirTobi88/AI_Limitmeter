@@ -2,11 +2,17 @@
 (shared by the macOS and Windows daemons)."""
 import asyncio
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from daemon import cli_renew
+
+# What a directly startable claude is called here: Windows runs only an .exe
+# (find_cli treats anything else as an npm shim to see through).
+CLAUDE = "claude.exe" if sys.platform == "win32" else "claude"
 
 
 class _FakeProc:
@@ -37,7 +43,7 @@ class _Cli:
     """A fake claude executable plus a recorder for the processes it starts."""
 
     def __init__(self, monkeypatch, tmp_path, **proc_kw):
-        self.exe = tmp_path / "claude"
+        self.exe = tmp_path / CLAUDE
         self.exe.write_bytes(b"")
         self.calls = []      # (args, kwargs)
         self.procs = []
@@ -93,10 +99,12 @@ def test_other_dir_is_passed_as_claude_config_dir(monkeypatch, tmp_path):
 def test_cli_dir_and_homebrew_are_on_path_for_npm_shebangs(monkeypatch, tmp_path):
     """npm's claude is `#!/usr/bin/env node`; launchd's PATH lacks node."""
     monkeypatch.setattr(cli_renew.sys, "platform", "darwin")
-    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    # os.pathsep, not ":" -- only sys.platform is faked, the separator is the
+    # host's (";" when this runs on Windows).
+    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
     cli = _Cli(monkeypatch, tmp_path)
     asyncio.run(cli.renew())
-    path = cli.calls[0][1]["env"]["PATH"].split(":")
+    path = cli.calls[0][1]["env"]["PATH"].split(os.pathsep)
     assert path[0] == str(tmp_path)
     assert "/opt/homebrew/bin" in path and path[-2:] == ["/usr/bin", "/bin"]
 
@@ -157,7 +165,7 @@ def test_cancelled_renewal_leaves_no_cli_behind(monkeypatch, tmp_path):
 
 
 def test_find_cli(monkeypatch, tmp_path):
-    exe = tmp_path / "claude"
+    exe = tmp_path / CLAUDE
     exe.write_bytes(b"")
     assert cli_renew.find_cli(f'"{exe}"') == [str(exe)]
     # a wrong configured path is not guessed around
